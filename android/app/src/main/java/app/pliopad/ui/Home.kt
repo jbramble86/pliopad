@@ -92,6 +92,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -234,6 +237,18 @@ fun HomeScreen(
             open(id)
         }
     }
+    // The floating pill bar's "+" creates in this list's context; its long-press opens the create menu.
+    val pill = LocalPill.current
+    if (pill != null) {
+        val latestNew by rememberUpdatedState(newNote)
+        DisposableEffect(pill) {
+            pill.onNew = { latestNew() }
+            pill.onNewMenu = { dialog = HomeDialog.NewMenu }
+            onDispose { pill.onNew = null; pill.onNewMenu = null }
+        }
+        LaunchedEffect(pill) { snapshotFlow { drawer.targetValue == DrawerValue.Open }.collect { pill.drawerOpen = it } }
+        DisposableEffect(pill) { onDispose { pill.drawerOpen = false } }
+    }
 
     val sidebar: @Composable () -> Unit = {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 10.dp)) {
@@ -328,7 +343,8 @@ fun HomeScreen(
                     })
             },
             floatingActionButton = {
-                if (type != "trash" && type != "home") Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // On phones the pill bar's "+" replaces these buttons.
+                if (pill == null && type != "trash" && type != "home") Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     SmallFloatingActionButton(onClick = { dialog = HomeDialog.NewMenu }) { Icon(Icons.Default.Add, "More ways to create") }
                     ExtendedFloatingActionButton(onClick = newNote, icon = { Icon(Icons.Default.Edit, null) }, text = { Text(if (type == "templates") "Template" else "Note") })
                 }

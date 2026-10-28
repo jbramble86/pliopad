@@ -193,7 +193,7 @@ fun HomeDashboard(
         val roomy = maxWidth >= 600.dp
         val columns = when { maxWidth >= 1050.dp -> 3; maxWidth >= 600.dp -> 2; else -> 1 }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
-            Column(Modifier.widthIn(max = 1040.dp).fillMaxWidth().padding(horizontal = if (roomy) 32.dp else 16.dp).padding(top = 8.dp, bottom = 40.dp)) {
+            Column(Modifier.widthIn(max = 1040.dp).fillMaxWidth().padding(horizontal = if (roomy) 32.dp else 16.dp).padding(top = 8.dp, bottom = if (LocalPill.current != null) PillClearance else 40.dp)) {
                 // The greeting is the page title (the top bar stays empty on Home, like Notion).
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

@@ -16,6 +16,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -262,6 +265,16 @@ private fun MainNav(activity: MainActivity, app: PliopadApp, s: SessionData) {
             nav.navigate("note/$id")
         }
     }
+    // Floating pill bar on phones and folded screens; unfolded screens keep the permanent sidebar instead.
+    val pill = remember { PillState() }
+    val route = entry?.destination?.route
+    val listType = if (route == "list/{type}/{arg}") entry?.arguments?.getString("type") else null
+    LaunchedEffect(route, listType) { pill.scrolledAway = false }
+    val goTop: (String) -> Unit = { r ->
+        nav.navigate(r) { popUpTo(nav.graph.findStartDestination().id) { inclusive = r == "list/home/-" }; launchSingleTop = true }
+    }
+    Box(Modifier.fillMaxSize().nestedScroll(pill.scroll)) {
+    CompositionLocalProvider(LocalPill provides (if (twoPane) null else pill)) {
     // Short, simple transitions: the default cross-fade felt sluggish.
     NavHost(nav, startDestination = "list/home/-",
         enterTransition = { fadeIn(tween(160)) + slideInHorizontally(tween(200)) { it / 12 } },
@@ -280,6 +293,19 @@ private fun MainNav(activity: MainActivity, app: PliopadApp, s: SessionData) {
         composable("tasks") { TasksScreen(app, s, nav) }
         composable("graph") { GraphScreen(app, s, nav) { id -> nav.navigate("note/$id") } }
         composable("settings") { SettingsScreen(app, s, activity) { nav.popBackStack() } }
+    }
+    }
+    PillNav(
+        visible = !twoPane && (route == "list/{type}/{arg}" || route == "tasks") && !pill.scrolledAway && !pill.drawerOpen,
+        current = when { route == "tasks" -> PillTab.Tasks; listType == "home" -> PillTab.Home; listType != null -> PillTab.Notes; else -> PillTab.None },
+        onHome = { goTop("list/home/-") },
+        onNotes = { goTop("list/all/-") },
+        onNew = { pill.onNew?.invoke() ?: scope.launch { openNote(app.repo.createNote()) } },
+        onNewMenu = pill.onNewMenu,
+        onTasks = { goTop("tasks") },
+        onSearch = { nav.navigate("search") },
+        modifier = Modifier.align(Alignment.BottomCenter),
+    )
     }
 }
 
@@ -301,7 +327,7 @@ private fun TasksScreen(app: PliopadApp, s: SessionData, nav: NavHostController)
         "Upcoming" to tasks.filter { it.due != null && it.due > today }.sortedBy { it.due }, "No date" to tasks.filter { it.due == null },
     ).filter { it.second.isNotEmpty() }
     Scaffold(topBar = { TopAppBar(title = { Text("Tasks") }, navigationIcon = { IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }) }) { pad ->
-        LazyColumn(Modifier.padding(pad), contentPadding = PaddingValues(bottom = 80.dp)) {
+        LazyColumn(Modifier.padding(pad), contentPadding = PaddingValues(bottom = if (LocalPill.current != null) PillClearance else 80.dp)) {
             if (groups.isEmpty()) item { Text("No open to-dos. Nice work. 🎉", Modifier.padding(24.dp)) }
             groups.forEach { (label, items) ->
                 item(key = label) { Text("$label  ${items.size}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)) }

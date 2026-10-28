@@ -107,6 +107,7 @@ class ScreenShotsPhone : ScreenShotsBase() {
         shoot("phone", "home")
         shoot("phone", "note") { putExtra(MainActivity.EXTRA_NOTE, "33333333-3333-4333-8333-333333333333") }
         shoot("phone", "database") { putExtra(MainActivity.EXTRA_NOTE, roadmap) }
+        shoot("phone", "tasks") { putExtra(MainActivity.EXTRA_ACTION, "tasks") }
     }
 }
 
