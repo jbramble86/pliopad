@@ -711,7 +711,7 @@ async function afterAuth(r) {
 
 async function authScreen(kind) {
   if (state.token && kind !== 'forgot') { try { state.me ||= await api('GET', '/me'); return go('#/'); } catch { /* show the form */ } }
-  try { const c = await api('GET', '/config'); state.appName = c.app_name; state.signupMode = c.signup_mode; } catch { /* defaults */ }
+  try { const c = await api('GET', '/site-info'); state.appName = c.app_name; state.signupMode = c.signup_mode; } catch { /* defaults */ }
   if (kind === 'login') {
     const f = form([['email', 'Email', 'email', { ac: 'email' }], ['password', 'Password', 'password', { ac: 'current-password' }],
       ['code', 'Authentication code', 'text', { optional: true, hidden: true, ac: 'one-time-code', ph: '123456' }]], 'Sign in', async (v, err) => {

@@ -25,8 +25,11 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
   '.apk': 'application/vnd.android.package-archive', '.zip': 'application/zip', '.dmg': 'application/x-apple-diskimage', '.exe': 'application/vnd.microsoft.portable-executable' };
 
 route('GET', '/api/health', async () => ({ ok: true, version: VERSION }));
-route('GET', '/api/config', async () => ({ app_name: setting('app_name', 'PlioPad'), signup_mode: setting('signup_mode', 'open'),
-  terms_url: setting('terms_url'), privacy_url: setting('privacy_url'), version: VERSION }));
+// /api/site-info: SiteGround's firewall blocks URLs ending in /config, so the web app uses this name (the old one is kept).
+const siteInfo = async () => ({ app_name: setting('app_name', 'PlioPad'), signup_mode: setting('signup_mode', 'open'),
+  terms_url: setting('terms_url'), privacy_url: setting('privacy_url'), version: VERSION });
+route('GET', '/api/site-info', siteInfo);
+route('GET', '/api/config', siteInfo);
 
 // ---- App downloads: drop builds into the downloads folder (see public/downloads/README.txt) and the web app offers them ----
 // Any file name works: the newest .exe/.zip is the Windows app (an installer .exe is preferred), .apk is Android, .dmg is macOS.
