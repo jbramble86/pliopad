@@ -64,7 +64,9 @@ These steps assume your plan includes SiteGround's Node.js hosting. I couldn't c
 
 **Keep data outside the app folder.** SiteGround deploys from an uploaded zip, and a redeploy can replace the app folder. Put `config.json` and `storage/` in a sibling folder such as `pliopad-data/`, and add two environment variables under Node.js → Deployment Options: `PLIOPAD_CONFIG=../pliopad-data/config.json` and `PLIOPAD_STORAGE=../pliopad-data/storage` (relative paths are resolved from the app folder). Back up that folder together with the database.
 
-**To update:** zip the contents of `server/` (`node_modules`, `package.json`, `package-lock.json`, `public`, `src`; not `test`), then in Node.js → Deployment Options use the ⋮ menu on the archive to upload the new zip and choose **Save and Deploy**. That also restarts the app. Database changes run automatically on start. `/api/health` shows the running version.
+**Deploying from Git (recommended):** push this repository to a private GitHub repo and, in Node.js → Deployment Options, switch the deploy method to that repo and branch `main` with auto-deploy on. The root `package.json` installs the server (npm workspaces) and `npm start` runs it; if SiteGround asks for a startup file, use `server/src/server.js`. Use **absolute** paths for `PLIOPAD_CONFIG`, `PLIOPAD_STORAGE` and `PLIOPAD_DOWNLOADS` (for example `/home/<user>/pliopad-data/config.json`), outside the checkout. Every push to `main` then goes live.
+
+**Updating from a zip instead:** zip the contents of `server/` (`node_modules`, `package.json`, `package-lock.json`, `public`, `src`; not `test`), then in Node.js → Deployment Options use the ⋮ menu on the archive to upload the new zip and choose **Save and Deploy**. That also restarts the app. Database changes run automatically on start. `/api/health` shows the running version.
 
 Configuration can also come from environment variables, which take precedence over `config.json`: `PLIOPAD_APP_KEY`, `PLIOPAD_BASE_URL`, `PLIOPAD_STORAGE`, `PORT`, `ANTHROPIC_API_KEY`.
 
