@@ -195,9 +195,13 @@ async function connectDatabase() {
 async function main() {
   // PORT may be a port number or a socket path (some hosts proxy through a socket); listen() accepts both.
   const port = process.env.PORT || config('port', 3000);
-  for (const w of STARTUP_WARNINGS) console.warn('Warning: ' + w);
-  console.log(`Settings file: ${CONFIG_FILE} (${fs.existsSync(CONFIG_FILE) ? 'found' : 'missing'})`);
-  console.log(`Data folder: ${DATA_DIR || 'none (using the app folder)'}`);
+  for (const w of STARTUP_WARNINGS) appLog('Warning: ' + w);
+  const stat = fs.existsSync(CONFIG_FILE) ? fs.statSync(CONFIG_FILE) : null;
+  appLog(`Settings file: ${CONFIG_FILE} (${stat ? `found, last changed ${stat.mtime.toISOString()}` : 'missing'})`);
+  appLog(`Data folder: ${DATA_DIR || 'none (using the app folder)'}`);
+  const dbc = config('db');
+  // Which database the settings point at (never the password).
+  if (dbc) appLog(`Database: ${dbc.driver || 'mysql'} ${dbc.driver === 'sqlite' ? dbc.file : `user "${dbc.user}" on ${dbc.host || 'localhost'}:${dbc.port || 3306}, database "${dbc.database}", password ${dbc.password ? `set (${String(dbc.password).length} characters)` : 'EMPTY'}`}`);
   server.listen(port, () => appLog(`PlioPad ${VERSION} listening on ${port}${isInstalled() ? '' : ' (open /install to set up)'}`));
   if (isInstalled()) await connectDatabase();
 }
