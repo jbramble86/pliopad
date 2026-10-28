@@ -33,6 +33,17 @@ export let DATA_DIR = process.env.PLIOPAD_DATA ? path.resolve(ROOT, process.env.
 /** Where a brand-new install keeps its data when no data folder exists yet: ~/pliopad-data, outside every site folder. */
 export const DEFAULT_DATA_DIR = path.join(os.homedir(), 'pliopad-data');
 
+/** Appends a line to logs/startup.log in the data folder (or the app folder), which the host's File Manager can show. */
+export function appLog(msg) {
+  const line = `${new Date().toISOString()} ${msg}`;
+  console.log(line);
+  try {
+    const dir = path.join(DATA_DIR || ROOT, 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'startup.log'), `${line}\n`);
+  } catch { /* best effort */ }
+}
+
 /** A file or folder in the data folder, falling back to the app folder when it hasn't been moved there yet. */
 export function dataPath(name) {
   if (!DATA_DIR) return path.join(ROOT, name);

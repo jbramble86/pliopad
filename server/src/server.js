@@ -9,7 +9,7 @@ import { dispatch, route, sendJson } from './http.js';
 import { renderPublicPage, renderInstaller } from './pages.js';
 import { renderLanding } from './landing.js';
 import { startJobs } from './jobs.js';
-import { ROOT, DATA_DIR, DATA_DIR_SEARCHED, STARTUP_WARNINGS, DEFAULT_DATA_DIR, settingsTarget, CONFIG_FILE, VERSION, config, reloadConfig, isInstalled, loadSettings, setting, hmac, randomHex, nowMs, ApiError } from './util.js';
+import { ROOT, DATA_DIR, DATA_DIR_SEARCHED, STARTUP_WARNINGS, appLog, DEFAULT_DATA_DIR, settingsTarget, CONFIG_FILE, VERSION, config, reloadConfig, isInstalled, loadSettings, setting, hmac, randomHex, nowMs, ApiError } from './util.js';
 import { hashPassword } from './auth.js';
 import { webhook } from './stripe.js';
 import { createWorkspace } from './seed.js';
@@ -143,6 +143,14 @@ export const server = http.createServer(async (req, res) => {
       if (p === '/install' && req.method === 'POST') return install(req, res);
       if (p.startsWith('/app') || p.startsWith('/admin') || p === '/' || p === '/install') return renderInstaller(res, '', DATA_DIR_SEARCHED);
     }
+    if (isInstalled() && !dbReady) {
+      // Only the error code is shown publicly; the full message is in logs/startup.log.
+      const code = dbError ? String(dbError.code || dbError.name || 'error') : 'starting';
+      res.setHeader('Retry-After', '15');
+      if (p.startsWith('/api/')) return sendJson(res, { error: 'PlioPad can\x27t reach its database yet. It retries every 15 seconds.', code }, 503);
+      res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      return res.end(`<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="15"><title>PlioPad is starting</title><body style="font:16px system-ui;max-width:600px;margin:14vh auto;padding:0 16px;color:#101D59"><h1>${dbError ? 'PlioPad can\x27t reach its database' : 'PlioPad is starting'}</h1><p>${dbError ? `Error: <code>${code}</code>. It retries every 15 seconds; details are in <code>pliopad-data/logs/startup.log</code>.` : 'This takes a few seconds.'}</p></body>`);
+    }
     if (p === '/api/stripe/webhook' && req.method === 'POST') {
       await webhook(await readBody(req), req.headers['stripe-signature'] || '');
       return sendJson(res, { received: true });
@@ -162,22 +170,39 @@ export const server = http.createServer(async (req, res) => {
   }
 });
 
-async function main() {
-  if (isInstalled()) {
+// The port opens first, then the database connects. If it can't, pages say so (never a bare 502) and it retries.
+let dbReady = !isInstalled();
+let dbError = null;
+let jobsStarted = false;
+async function connectDatabase() {
+  try {
     await db.init();
     await migrate();
     await loadSettings(db);
-    startJobs();
+    if (!jobsStarted) { startJobs(); jobsStarted = true; }
+    dbReady = true;
+    dbError = null;
+    appLog('Database connected');
+  } catch (e) {
+    dbReady = false;
+    dbError = e;
+    appLog(`Database connection failed (${e.code || e.name}): ${e.message}. Retrying in 15 seconds.`);
+    await db.close().catch(() => {});
+    setTimeout(connectDatabase, 15000).unref?.();
   }
+}
+
+async function main() {
   // PORT may be a port number or a socket path (some hosts proxy through a socket); listen() accepts both.
   const port = process.env.PORT || config('port', 3000);
   for (const w of STARTUP_WARNINGS) console.warn('Warning: ' + w);
   console.log(`Settings file: ${CONFIG_FILE} (${fs.existsSync(CONFIG_FILE) ? 'found' : 'missing'})`);
   console.log(`Data folder: ${DATA_DIR || 'none (using the app folder)'}`);
-  server.listen(port, () => console.log(`Pliopad ${VERSION} listening on http://localhost:${port}${isInstalled() ? '' : ' (open /install to set up)'}`));
+  server.listen(port, () => appLog(`PlioPad ${VERSION} listening on ${port}${isInstalled() ? '' : ' (open /install to set up)'}`));
+  if (isInstalled()) await connectDatabase();
 }
 
 main().catch((e) => {
-  console.error('[pliopad] failed to start:', e);
+  appLog(`Failed to start: ${e.stack || e}`);
   process.exit(1);
 });
