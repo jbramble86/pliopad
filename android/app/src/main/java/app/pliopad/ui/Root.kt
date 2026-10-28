@@ -147,7 +147,8 @@ private fun LockScreen(unlock: () -> Unit) {
 @Composable
 private fun SignInScreen(app: PliopadApp, s: SessionData) {
     val scope = rememberCoroutineScope()
-    var server by remember { mutableStateOf(s.server.ifBlank { BuildConfig.DEFAULT_SERVER }) }
+    var signUp by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
@@ -168,34 +169,36 @@ private fun SignInScreen(app: PliopadApp, s: SessionData) {
         }
         Text("Notes, docs and databases. Works offline.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(24.dp))
-        OutlinedTextField(server, { server = it.trim() }, Modifier.fillMaxWidth(), label = { Text("Server address") }, singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
+        if (signUp) OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Your name") }, singleLine = true,
+            keyboardOptions = KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Words))
         OutlinedTextField(email, { email = it.trim() }, Modifier.fillMaxWidth(), label = { Text("Email") }, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
-        OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("Password") }, singleLine = true,
+        OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text(if (signUp) "Password (at least 10 characters)" else "Password") }, singleLine = true,
             visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
-        if (needCode) OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, Modifier.fillMaxWidth(), label = { Text("Authentication code") },
+        if (needCode && !signUp) OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, Modifier.fillMaxWidth(), label = { Text("Authentication code") },
             singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword))
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
         Spacer(Modifier.height(16.dp))
-        Button(enabled = !busy && email.isNotBlank() && password.isNotBlank() && server.startsWith("http"), modifier = Modifier.fillMaxWidth().height(48.dp), onClick = {
+        Button(enabled = !busy && email.isNotBlank() && password.isNotBlank() && (!signUp || (name.isNotBlank() && password.length >= 10)), modifier = Modifier.fillMaxWidth().height(48.dp), onClick = {
             busy = true; error = null
             scope.launch {
                 try {
-                    val r = app.api.login(server, email, password, code.ifBlank { null })
-                    app.session.signIn(server.trimEnd('/'), r.token!!, r.user, r.workspaces, r.ai)
+                    val r = if (signUp) app.api.signup(app.serverUrl, name.trim(), email, password)
+                        else app.api.login(app.serverUrl, email, password, code.ifBlank { null })
+                    app.session.signIn(app.serverUrl, r.token!!, r.user, r.workspaces, r.ai)
                     SyncWorker.schedulePeriodic(app)
                     SyncWorker.requestSoon(app, 0)
                 } catch (e: ApiException) {
                     if (e.code == "mfa") needCode = true
                     error = e.message
                 } catch (e: Exception) {
-                    error = "Could not reach the server. Check the address and your connection."
+                    error = "Could not reach PlioPad. Check your internet connection."
                 } finally { busy = false }
             }
-        }) { Text(if (busy) "Signing in…" else "Sign in") }
-        Text("No account yet? Create one on the web, then sign in here.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 12.dp))
+        }) { Text(when { busy && signUp -> "Creating your account…"; busy -> "Signing in…"; signUp -> "Create account"; else -> "Sign in" }) }
+        TextButton(onClick = { signUp = !signUp; error = null; needCode = false }, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp)) {
+            Text(if (signUp) "Already have an account? Sign in" else "New to PlioPad? Create an account")
+        }
     }
 }
 
@@ -334,7 +337,6 @@ private fun SettingsScreen(app: PliopadApp, s: SessionData, activity: MainActivi
                     Text(s.user?.name ?: "", fontWeight = FontWeight.SemiBold)
                     Text(s.user?.email ?: "", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("${s.workspace?.name} · ${s.workspace?.plan} plan · ${s.workspace?.role}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
-                    Text(s.server, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
@@ -364,7 +366,7 @@ private fun SettingsScreen(app: PliopadApp, s: SessionData, activity: MainActivi
                     Switch(checked = s.appLock, onCheckedChange = { on -> scope.launch { app.session.setAppLock(on) } })
                 }
             }
-            TextButton(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(s.server + "/app/"))) }) { Text("Open PlioPad on the web") }
+            TextButton(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.SERVER_URL + "/app/"))) }) { Text("Open PlioPad on the web") }
             TextButton(onClick = {
                 scope.launch {
                     if (pending > 0) runCatching { app.sync.run(ws) } // try to upload unsaved changes first

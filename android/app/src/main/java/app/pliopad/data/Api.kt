@@ -99,6 +99,11 @@ class Api(private val server: () -> String, private val token: () -> String?) {
         return json.decodeFromString(MeResponse.serializer(), call("POST", "/auth/login", body, auth = null, baseUrl = server.trimEnd('/')))
     }
 
+    suspend fun signup(server: String, name: String, email: String, password: String): MeResponse {
+        val body = buildJsonObject { put("name", name); put("email", email); put("password", password); put("device", "Android") }
+        return json.decodeFromString(MeResponse.serializer(), call("POST", "/auth/signup", body, auth = null, baseUrl = server.trimEnd('/')))
+    }
+
     suspend fun me(): MeResponse = json.decodeFromString(MeResponse.serializer(), call("GET", "/me"))
 
     suspend fun logout() { runCatching { call("POST", "/auth/logout") } }

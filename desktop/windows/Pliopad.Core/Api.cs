@@ -36,7 +36,7 @@ public sealed class Api(Func<string> server, Func<string?> token)
         if (body != null) req.Content = JsonContent.Create(body, body.GetType(), options: Blocks.Json);
         else if (method != HttpMethod.Get) req.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
         if (auth && token() is { } t) req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", t);
-        req.Headers.UserAgent.ParseAdd("Pliopad-Windows/1.1.0");
+        req.Headers.UserAgent.ParseAdd("Pliopad-Windows/1.1.1");
         req.Headers.Accept.ParseAdd("application/json");
         using var res = await Http.SendAsync(req).ConfigureAwait(false);
         var text = await res.Content.ReadAsStringAsync().ConfigureAwait(false);

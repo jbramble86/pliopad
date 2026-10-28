@@ -17,7 +17,9 @@ public sealed class Repo
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private CancellationTokenSource? _soon;
 
-    public string Server { get; private set; } = "https://pliopad.com";
+    /// <summary>The app always uses pliopad.com. PLIOPAD_SERVER overrides it for development and tests only.</summary>
+    public static string DefaultServer => Environment.GetEnvironmentVariable("PLIOPAD_SERVER") ?? "https://pliopad.com";
+    public string Server { get; private set; } = DefaultServer;
     public string? Token { get; private set; }
     public User? User { get; private set; }
     public List<Workspace> Workspaces { get; private set; } = [];
@@ -36,7 +38,6 @@ public sealed class Repo
         Store = new Store(Path.Combine(dataDir, "pliopad.db"));
         Api = new Api(() => Server, () => Token) { Log = line => { try { File.AppendAllText(Path.Combine(dataDir, "network.log"), line + Environment.NewLine); } catch { } } };
         _sync = new SyncEngine(Store, Api);
-        Server = Store.Get("server") ?? "https://pliopad.com";
         Token = Unprotect(Store.Get("token"));
         WsId = long.TryParse(Store.Get("ws"), out var ws) ? ws : 0;
         try
@@ -73,7 +74,6 @@ public sealed class Repo
         var me = await auth;
         Server = server;
         Token = me.Token ?? throw new ApiException(401, "Sign-in failed");
-        Store.Set("server", server);
         Store.Set("token", Protect(Token));
         ApplyMe(me);
         if (WsId == 0 || Workspace == null) SwitchWorkspace(me.Workspaces.FirstOrDefault()?.Id ?? 0);

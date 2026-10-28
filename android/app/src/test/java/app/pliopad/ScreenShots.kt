@@ -58,6 +58,7 @@ abstract class ScreenShotsBase {
                 kind = kind, dbSchema = schema, props = props)
         runBlocking {
             // A server that refuses at once, so background syncs fail quietly and keep this data.
+            app.serverUrl = "http://127.0.0.1:9"
             app.session.signIn("http://127.0.0.1:9", "test", User(1, "ada@example.com", "Ada Lovelace", "#6366f1"), listOf(Workspace(1, "Acme Inc.", "owner", "business")), ai = true)
             dao.saveSyncState(SyncState(ws, 10, now))
             dao.upsertNotebooks(listOf(

@@ -21,7 +21,9 @@ class PliopadApp : Application() {
     val database by lazy { PliopadDatabase.get(this) }
     val dao by lazy { database.dao() }
     private val sessionState by lazy { session.data.stateIn(scope, SharingStarted.Eagerly, app.pliopad.data.SessionData()) }
-    val api by lazy { Api(server = { sessionState.value.server }, token = { sessionState.value.token }) }
+    /** Always pliopad.com in releases; tests point it at a local address. */
+    var serverUrl: String = BuildConfig.SERVER_URL
+    val api by lazy { Api(server = { serverUrl }, token = { sessionState.value.token }) }
     val sync by lazy { SyncEngine(dao, api) }
     val repo by lazy { Repo(this, dao, session) }
 

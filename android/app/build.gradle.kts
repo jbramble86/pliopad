@@ -16,16 +16,20 @@ android {
         applicationId = "app.pliopad"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.4.0"
-        // The server the sign-in screen suggests. Override with PLIOPAD_SERVER=… in local.properties.
-        val server = Properties().apply {
-            rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
-        }.getProperty("PLIOPAD_SERVER", "https://")
-        buildConfigField("String", "DEFAULT_SERVER", "\"$server\"")
+        versionCode = 7
+        versionName = "1.4.1"
+        // The app always talks to pliopad.com; users never enter a server address.
+        buildConfigField("String", "SERVER_URL", "\"https://pliopad.com\"")
     }
 
     buildTypes {
+        debug {
+            // Debug builds only: PLIOPAD_SERVER=… in local.properties points the app at a test server.
+            val devServer = Properties().apply {
+                rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+            }.getProperty("PLIOPAD_SERVER")
+            if (!devServer.isNullOrBlank()) buildConfigField("String", "SERVER_URL", "\"$devServer\"")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

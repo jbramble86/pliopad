@@ -124,14 +124,13 @@ public sealed class AskView : ScrollPage
     }
 }
 
-/// <summary>Sign in (or create an account) against pliopad.com or a self-hosted server.</summary>
+/// <summary>Sign in (or create an account) to PlioPad.</summary>
 public sealed class SignInView : Grid
 {
     public SignInView(Action done)
     {
         Background = B("PBg");
         var R = App.Repo;
-        var server = new TextBox { Header = "Server", Text = R.Server, PlaceholderText = "https://pliopad.com" };
         var name = new TextBox { Header = "Your name", Visibility = Visibility.Collapsed };
         var email = new TextBox { Header = "Email", PlaceholderText = "you@company.com" };
         var pass = new PasswordBox { Header = "Password" };
@@ -158,8 +157,8 @@ public sealed class SignInView : Grid
             go.IsEnabled = false; busy.IsActive = true;
             try
             {
-                if (signup) await R.SignUp(server.Text, name.Text, email.Text, pass.Password);
-                else await R.SignIn(server.Text, email.Text, pass.Password, code.Visibility == Visibility.Visible ? code.Text : null);
+                if (signup) await R.SignUp(Repo.DefaultServer, name.Text, email.Text, pass.Password);
+                else await R.SignIn(Repo.DefaultServer, email.Text, pass.Password, code.Visibility == Visibility.Visible ? code.Text : null);
                 done();
             }
             catch (ApiException e) when (e.Code == "mfa")
@@ -168,7 +167,7 @@ public sealed class SignInView : Grid
                 error.Text = e.Message;
                 code.Focus(FocusState.Programmatic);
             }
-            catch (HttpRequestException) { error.Text = "Can't reach that server. Check the address and your connection."; }
+            catch (HttpRequestException) { error.Text = "Can't reach PlioPad. Check your internet connection."; }
             catch (Exception e) { error.Text = e.Message; }
             finally { go.IsEnabled = true; busy.IsActive = false; }
         }
@@ -178,7 +177,7 @@ public sealed class SignInView : Grid
 
         var logo = new Image { Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", "Pliopad-256.png"))), Width = 64, Height = 64, HorizontalAlignment = HorizontalAlignment.Left };
         var form = V(14, logo, V(4, T("Welcome to PlioPad", 28, bold: true), T("Your notes, docs and databases — on this PC, even offline.", 14, "PMuted")),
-            name, email, pass, code, error, go, H(8, busy), switchMode, Divider(), server);
+            name, email, pass, code, error, go, H(8, busy), switchMode);
         form.Width = 380;
         form.HorizontalAlignment = HorizontalAlignment.Center;
         form.VerticalAlignment = VerticalAlignment.Center;
