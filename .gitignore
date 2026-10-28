@@ -1,0 +1,32 @@
+# Dependencies and build output
+node_modules/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+desktop/windows/**/bin/
+desktop/windows/**/obj/
+*.apk
+*.aab
+
+# Server data and secrets: never in Git (keep them in pliopad-data/ on the host)
+config.json
+server/storage/
+server/data/
+*.sqlite
+*.sqlite-*
+.env
+*.jks
+*.keystore
+
+# App downloads are large; they live in PLIOPAD_DOWNLOADS on the host (see server/public/downloads/README.txt)
+server/public/downloads/*
+!server/public/downloads/README.txt
+
+# Editor and OS clutter
+.vs/
+.vscode/
+.idea/
+*.user
+.DS_Store
+Thumbs.db

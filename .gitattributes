@@ -1,0 +1,6 @@
+# Store and check out text files with LF so the Linux host (and gradlew) see Unix line endings.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.png binary
+*.ico binary
+*.jar binary

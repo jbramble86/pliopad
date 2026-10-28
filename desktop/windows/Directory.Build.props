@@ -1,0 +1,8 @@
+<Project>
+  <!-- Build output lives outside OneDrive so syncing doesn't fight the compiler. -->
+  <PropertyGroup>
+    <PliopadBuildRoot>$(LOCALAPPDATA)\PliopadBuild\windows\</PliopadBuildRoot>
+    <BaseIntermediateOutputPath>$(PliopadBuildRoot)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(PliopadBuildRoot)bin\$(MSBuildProjectName)\</BaseOutputPath>
+  </PropertyGroup>
+</Project>

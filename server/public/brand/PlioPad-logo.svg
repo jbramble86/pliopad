@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300">
+  <title>PlioPad primary logo</title>
+  <g transform="translate(28 25) scale(1.02)">
+    <path fill="#647BFF" d="M24 18H121C165 18 193 48 193 91C193 137 160 162 115 162H100V223L24 258Z"/>
+    <path fill="#101D59" d="M24 18H119C167 18 193 47 193 92C193 133 163 161 116 161H100V117C100 105 92 94 79 84Z"/>
+    <path fill="#83EBC0" d="M24 223C24 189 52 162 88 162H100V223L33 256C28 259 24 256 24 249Z"/>
+    <path fill="#101D59" opacity=".1" d="M24 223C24 189 52 162 88 162H100V173C66 172 40 190 24 223Z"/>
+  </g>
+  <text x="292" y="192" font-family="Arial, Helvetica, sans-serif" font-size="151" font-weight="700" letter-spacing="-7" fill="#101D59">Plio<tspan fill="#647BFF">Pad</tspan></text>
+</svg>

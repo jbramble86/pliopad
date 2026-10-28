@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Self-checking console: `dotnet run` exits non-zero on failure. Set PLIOPAD_TEST_SERVER to also run the sync round trip. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Pliopad.Core\Pliopad.Core.csproj" />
+  </ItemGroup>
+</Project>

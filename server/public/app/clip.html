@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clip to Pliopad</title>
+  <link rel="stylesheet" href="app.css">
+  <style>body { padding: 20px; } h1 { font-size: 18px; margin: 0 0 14px; } .src { color: var(--muted); font-size: 12px; word-break: break-all; margin-bottom: 14px; }</style>
+</head>
+<body>
+  <h1>✦ Clip to Pliopad</h1>
+  <div id="body" class="muted">Waiting for the page…</div>
+  <script type="module">
+    // Opened by the bookmarklet; receives the page via postMessage, then saves it with the signed-in session.
+    import { h, toast, store } from './js/ui.js';
+    const token = store.get('token');
+    const wsId = store.get('ws');
+    const root = document.getElementById('body');
+    if (!token || !wsId) {
+      root.replaceChildren(h('p', {}, 'Sign in to Pliopad first, then try again.'), h('a', { class: 'btn primary', href: '/app/#/login', target: '_blank' }, 'Sign in'));
+    } else {
+      addEventListener('message', async (e) => {
+        if (!e.data || typeof e.data !== 'object' || !e.data.url) return;
+        const page = e.data;
+        const api = (m, p, b) => fetch(`/api/w/${wsId}${p}`, { method: m, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: b ? JSON.stringify(b) : undefined }).then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d; });
+        const boot = await api('GET', '/bootstrap');
+        const title = h('input', { class: 'input', value: page.title });
+        const nb = h('select', { class: 'input' }, boot.notebooks.map((n) => h('option', { value: n.id }, n.name)));
+        const note = h('textarea', { class: 'input', rows: 3, placeholder: 'Add a note (optional)' });
+        const save = h('button', { class: 'btn primary', style: { width: '100%' }, onclick: async () => {
+          save.disabled = true;
+          try {
+            const r = await api('POST', '/clip', { url: page.url, title: title.value, html: page.html, note: note.value || undefined, notebook_id: nb.value });
+            root.replaceChildren(h('p', {}, '✅ Saved.'), h('a', { class: 'btn', href: `/app/#/w/${wsId}/n/${r.id}`, target: '_blank' }, 'Open in Pliopad'));
+            setTimeout(() => close(), 1800);
+          } catch (x) { toast(x.message, { error: true }); save.disabled = false; }
+        } }, 'Save clip');
+        root.replaceChildren(h('div', { class: 'src' }, page.url), h('label', { class: 'field' }, h('span', {}, 'Title'), title),
+          h('label', { class: 'field' }, h('span', {}, 'Notebook'), nb), h('label', { class: 'field' }, h('span', {}, 'Note'), note), save);
+      });
+      opener?.postMessage('pliopad-ready', '*');
+    }
+  </script>
+</body>
+</html>

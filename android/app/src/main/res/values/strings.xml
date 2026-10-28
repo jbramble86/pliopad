@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">PlioPad</string>
+    <string name="widget_quick_label">PlioPad quick capture</string>
+    <string name="widget_quick_desc">New note, voice note, scan, daily note and search in one tap</string>
+    <string name="widget_tasks_label">PlioPad tasks</string>
+    <string name="widget_tasks_desc">Open to-dos from every note. Tick them off right here.</string>
+    <string name="widget_note_label">PlioPad pinned note</string>
+    <string name="widget_note_desc">Keep a note on your home screen. Checklists can be ticked in place.</string>
+    <string name="widget_shortcuts_label">PlioPad shortcuts</string>
+    <string name="widget_shortcuts_desc">Your starred and recently edited notes</string>
+    <string name="widget_graph_label">PlioPad graph</string>
+    <string name="widget_graph_desc">A live map of how your notes link together. Tap to explore.</string>
+</resources>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:background="@drawable/preview_card" android:padding="12dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="6dp">
+        <TextView android:layout_height="wrap_content" android:text="Tasks · 1 overdue" android:textSize="14sp" android:textColor="@color/preview_text" android:textStyle="bold" android:layout_width="0dp" android:layout_weight="1"/>
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Open" android:textSize="13sp" android:textColor="#647BFF" android:textStyle="bold" android:background="@drawable/preview_chip" android:paddingStart="10dp" android:paddingEnd="10dp" android:paddingTop="3dp" android:paddingBottom="3dp"/>
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingTop="4dp" android:paddingBottom="4dp">
+        <View android:layout_width="14dp" android:layout_height="14dp" android:background="@drawable/preview_box" android:layout_marginEnd="10dp"/>
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Write launch post" android:textSize="14sp" android:textColor="@color/preview_text" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Q4 launch plan" android:textSize="11sp" android:textColor="@color/preview_muted" />
+        </LinearLayout>
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Oct 26" android:textSize="11sp" android:textColor="@color/preview_text" android:background="@drawable/preview_due_late" android:paddingStart="6dp" android:paddingEnd="6dp" android:paddingTop="2dp" android:paddingBottom="2dp"/>
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingTop="4dp" android:paddingBottom="4dp">
+        <View android:layout_width="14dp" android:layout_height="14dp" android:background="@drawable/preview_box" android:layout_marginEnd="10dp"/>
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Finish Windows beta" android:textSize="14sp" android:textColor="@color/preview_text" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Q4 launch plan" android:textSize="11sp" android:textColor="@color/preview_muted" />
+        </LinearLayout>
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Today" android:textSize="11sp" android:textColor="@color/preview_text" android:background="@drawable/preview_due_today" android:paddingStart="6dp" android:paddingEnd="6dp" android:paddingTop="2dp" android:paddingBottom="2dp"/>
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingTop="4dp" android:paddingBottom="4dp">
+        <View android:layout_width="14dp" android:layout_height="14dp" android:background="@drawable/preview_box" android:layout_marginEnd="10dp"/>
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Send notes to Dana" android:textSize="14sp" android:textColor="@color/preview_text" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Weekly sync" android:textSize="11sp" android:textColor="@color/preview_muted" />
+        </LinearLayout>
+        
+    </LinearLayout>
+</LinearLayout>

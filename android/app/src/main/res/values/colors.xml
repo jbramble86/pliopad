@@ -1,0 +1,10 @@
+<resources>
+    <!-- PlioPad brand -->
+    <color name="pliopad_navy">#101D59</color>
+    <color name="pliopad_accent">#647BFF</color>
+    <color name="pliopad_mint">#83EBC0</color>
+    <color name="pliopad_ivory">#FAF9F5</color>
+    <color name="pliopad_bg">#FFFFFF</color>
+    <color name="preview_text">#101D59</color>
+    <color name="preview_muted">#5D6485</color>
+</resources>

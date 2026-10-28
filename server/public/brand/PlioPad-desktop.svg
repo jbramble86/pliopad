@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>PlioPad desktop app icon</title>
+  <rect width="1024" height="1024" rx="224" fill="#101D59"/>
+  <g transform="translate(222 130) scale(3.12)">
+    <path fill="#647BFF" d="M24 18H121C165 18 193 48 193 91C193 137 160 162 115 162H100V223L24 258Z"/>
+    <path fill="#293C91" d="M24 18H119C167 18 193 47 193 92C193 133 163 161 116 161H100V117C100 105 92 94 79 84Z"/>
+    <path fill="#83EBC0" d="M24 223C24 189 52 162 88 162H100V223L33 256C28 259 24 256 24 249Z"/>
+  </g>
+</svg>

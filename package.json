@@ -1,0 +1,13 @@
+{
+  "name": "pliopad",
+  "version": "1.1.0",
+  "private": true,
+  "description": "PlioPad: server, web app, Android and Windows apps. Hosting runs the server from this folder.",
+  "type": "module",
+  "workspaces": ["server"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server/src/server.js",
+    "test": "npm test --workspace server"
+  }
+}
