@@ -12,7 +12,9 @@ import * as Stripe from '../stripe.js';
 import { ApiError, nowMs, month, setting, sendMail, baseUrl, randomHex, jdec, jenc, uuid, isUuid, config, ROOT, dataPath } from '../util.js';
 
 export const storageDir = () => {
-  const d = path.resolve(ROOT, config('storage', dataPath('storage')));
+  // A configured folder is used when it (or its parent) exists; a wrong path falls back to the data folder.
+  const configured = config('storage') && path.resolve(ROOT, String(config('storage')));
+  const d = configured && (fs.existsSync(configured) || fs.existsSync(path.dirname(configured))) ? configured : dataPath('storage');
   fs.mkdirSync(d, { recursive: true });
   return d;
 };

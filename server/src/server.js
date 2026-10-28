@@ -9,7 +9,7 @@ import { dispatch, route, sendJson } from './http.js';
 import { renderPublicPage, renderInstaller } from './pages.js';
 import { renderLanding } from './landing.js';
 import { startJobs } from './jobs.js';
-import { ROOT, DATA_DIR, DATA_DIR_SEARCHED, DEFAULT_DATA_DIR, settingsTarget, CONFIG_FILE, VERSION, config, reloadConfig, isInstalled, loadSettings, setting, hmac, randomHex, nowMs, ApiError } from './util.js';
+import { ROOT, DATA_DIR, DATA_DIR_SEARCHED, STARTUP_WARNINGS, DEFAULT_DATA_DIR, settingsTarget, CONFIG_FILE, VERSION, config, reloadConfig, isInstalled, loadSettings, setting, hmac, randomHex, nowMs, ApiError } from './util.js';
 import { hashPassword } from './auth.js';
 import { webhook } from './stripe.js';
 import { createWorkspace } from './seed.js';
@@ -139,7 +139,7 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
   try {
     if (!isInstalled()) {
-      if (p.startsWith('/api/')) return sendJson(res, { error: 'PlioPad settings (config.json) were not found. If PlioPad was set up before, put config.json in a pliopad-data folder; see /install for where it looked.', searched: DATA_DIR_SEARCHED }, 503);
+      if (p.startsWith('/api/')) return sendJson(res, { error: 'PlioPad settings (config.json) were not found. If PlioPad was set up before, put config.json in a pliopad-data folder; see /install for where it looked.' }, 503);
       if (p === '/install' && req.method === 'POST') return install(req, res);
       if (p.startsWith('/app') || p.startsWith('/admin') || p === '/' || p === '/install') return renderInstaller(res, '', DATA_DIR_SEARCHED);
     }
@@ -170,6 +170,9 @@ async function main() {
     startJobs();
   }
   const port = Number(process.env.PORT || config('port', 3000));
+  for (const w of STARTUP_WARNINGS) console.warn('Warning: ' + w);
+  console.log(`Settings file: ${CONFIG_FILE} (${fs.existsSync(CONFIG_FILE) ? 'found' : 'missing'})`);
+  console.log(`Data folder: ${DATA_DIR || 'none (using the app folder)'}`);
   server.listen(port, () => console.log(`Pliopad ${VERSION} listening on http://localhost:${port}${isInstalled() ? '' : ' (open /install to set up)'}`));
 }
 

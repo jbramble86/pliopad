@@ -42,8 +42,13 @@ export function dataPath(name) {
 }
 
 // A relative PLIOPAD_CONFIG is relative to the app folder.
-const CONFIG_PINNED = !!(process.env.PLIOPAD_CONFIG || argConfig);
-export let CONFIG_FILE = CONFIG_PINNED ? path.resolve(ROOT, process.env.PLIOPAD_CONFIG || argConfig) : dataPath('config.json');
+/** Warnings about settings found at startup (printed to the log by server.js). */
+export const STARTUP_WARNINGS = [];
+// PLIOPAD_CONFIG is only trusted when the file exists; a wrong path must not hide the real settings file.
+const envConfig = process.env.PLIOPAD_CONFIG && path.resolve(ROOT, process.env.PLIOPAD_CONFIG);
+if (envConfig && !fs.existsSync(envConfig)) STARTUP_WARNINGS.push(`PLIOPAD_CONFIG points to ${envConfig}, which does not exist; ignoring it.`);
+const CONFIG_PINNED = !!argConfig || !!(envConfig && fs.existsSync(envConfig));
+export let CONFIG_FILE = argConfig ? path.resolve(ROOT, argConfig) : CONFIG_PINNED ? envConfig : dataPath('config.json');
 
 /**
  * Where the installer saves settings: the configured file, or a data folder outside the app (created if needed),
@@ -70,7 +75,7 @@ let cfg = null;
 export function config(key, def = undefined) {
   if (cfg === null) cfg = fs.existsSync(CONFIG_FILE) ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) : {};
   if (key === undefined) return cfg;
-  let env = process.env['PLIOPAD_' + key.toUpperCase()];
+  let env = key === 'config' ? undefined : process.env['PLIOPAD_' + key.toUpperCase()];
   // Structured settings (PLIOPAD_DB) can be given as JSON in an environment variable.
   if (env && /^s*[{[]/.test(env)) try { env = JSON.parse(env); } catch { /* keep the raw string */ }
   return env ?? cfg[key] ?? def;
