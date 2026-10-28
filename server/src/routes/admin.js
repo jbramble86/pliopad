@@ -9,6 +9,7 @@ import { aiAvailable } from '../ai.js';
 import { stripeEnabled } from '../stripe.js';
 import { wsOut, deleteWorkspace, auditQuery, storageDir } from './workspace.js';
 import path from 'node:path';
+import { downloadsDir, appBuilds } from '../server.js';
 import { ApiError, nowMs, month, setting, setSetting, jdec, jenc, VERSION, resetMailTransport, ROOT, DATA_DIR, CONFIG_FILE } from '../util.js';
 
 const page = (ctx) => {
@@ -237,6 +238,7 @@ route('GET', '/api/admin/system', async (ctx) => {
     storage_free_gb: freeGb, storage_writable: writable, ai_ready: aiAvailable(), stripe: stripeEnabled(), mail: !!setting('smtp')?.host,
     jobs_last: setting('jobs_last'),
     app_dir: ROOT, data_dir: DATA_DIR, config_file: CONFIG_FILE, storage_dir: dir,
+    downloads_dir: downloadsDir(), downloads: appBuilds().map((a) => ({ name: a.name, file: a.file, version: a.version })),
     config_in_app: CONFIG_FILE.startsWith(ROOT + path.sep),
   };
 });

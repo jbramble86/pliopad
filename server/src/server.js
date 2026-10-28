@@ -22,36 +22,47 @@ import './routes/admin.js';
 const PUBLIC = path.join(ROOT, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml',
   '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.txt': 'text/plain',
-  '.apk': 'application/vnd.android.package-archive', '.zip': 'application/zip', '.dmg': 'application/x-apple-diskimage' };
+  '.apk': 'application/vnd.android.package-archive', '.zip': 'application/zip', '.dmg': 'application/x-apple-diskimage', '.exe': 'application/vnd.microsoft.portable-executable' };
 
 route('GET', '/api/health', async () => ({ ok: true, version: VERSION }));
 route('GET', '/api/config', async () => ({ app_name: setting('app_name', 'PlioPad'), signup_mode: setting('signup_mode', 'open'),
   terms_url: setting('terms_url'), privacy_url: setting('privacy_url'), version: VERSION }));
 
 // ---- App downloads: drop builds into the downloads folder (see public/downloads/README.txt) and the web app offers them ----
-// PLIOPAD_DOWNLOADS can point outside the app folder, so large builds stay out of Git and survive redeploys.
-const DOWNLOADS = path.resolve(ROOT, config('downloads', DATA_DIR && fs.existsSync(path.join(DATA_DIR, 'downloads')) ? path.join(DATA_DIR, 'downloads') : 'public/downloads'));
+// Any file name works: the newest .exe/.zip is the Windows app (an installer .exe is preferred), .apk is Android, .dmg is macOS.
 const APPS = [
-  { id: 'windows', name: 'Windows', file: 'Pliopad-Windows.zip', note: 'Windows 10 and 11, 64-bit. Unzip and run Pliopad.exe.' },
-  { id: 'android', name: 'Android', file: 'Pliopad-Android.apk', note: 'Android 8 or newer. Allow installs from your browser when asked.' },
-  { id: 'mac', name: 'macOS', file: 'Pliopad-Mac.dmg', note: 'macOS 14 or newer.' },
+  { id: 'windows', name: 'Windows', match: [/\.exe$/i, /\.zip$/i], notes: { exe: 'Windows 10 and 11, 64-bit. Run the installer.', zip: 'Windows 10 and 11, 64-bit. Unzip and run Pliopad.exe.' } },
+  { id: 'android', name: 'Android', match: [/\.apk$/i], notes: { apk: 'Android 8 or newer. Allow installs from your browser when asked.' } },
+  { id: 'mac', name: 'macOS', match: [/\.dmg$/i], notes: { dmg: 'macOS 14 or newer.' } },
 ];
-route('GET', '/api/downloads', async () => {
+const listFiles = (dir) => { try { return fs.readdirSync(dir).filter((f) => fs.statSync(path.join(dir, f)).isFile()); } catch { return []; } };
+// The first candidate folder that holds an app build wins: PLIOPAD_DOWNLOADS, then pliopad-data/downloads, then public/downloads.
+const DOWNLOAD_DIRS = [config('downloads'), DATA_DIR && path.join(DATA_DIR, 'downloads'), 'public/downloads'].filter(Boolean).map((d) => path.resolve(ROOT, String(d)));
+export function downloadsDir() {
+  return DOWNLOAD_DIRS.find((d) => listFiles(d).some((f) => APPS.some((a) => a.match.some((re) => re.test(f))))) || DOWNLOAD_DIRS[0];
+}
+
+/** Each app's newest build in the downloads folder (or null). */
+export function appBuilds() {
+  const dir = downloadsDir();
+  const files = listFiles(dir).map((f) => ({ f, s: fs.statSync(path.join(dir, f)) }));
   let versions = {};
-  try { versions = JSON.parse(fs.readFileSync(path.join(DOWNLOADS, 'versions.json'), 'utf8')); } catch { /* optional */ }
-  return APPS.map((a) => {
-    const file = path.join(DOWNLOADS, a.file);
-    const stat = fs.existsSync(file) ? fs.statSync(file) : null;
-    return { ...a, available: !!stat, url: stat ? `/downloads/${a.file}` : null, size: stat?.size || null, version: versions[a.id] || null, updated_at: stat ? stat.mtimeMs : null };
+  try { versions = JSON.parse(fs.readFileSync(path.join(dir, 'versions.json'), 'utf8')); } catch { /* optional */ }
+  return APPS.map(({ match, notes, ...a }) => {
+    const pick = match.map((re) => files.filter((x) => re.test(x.f)).sort((p, q) => q.s.mtimeMs - p.s.mtimeMs)[0]).find(Boolean);
+    const ext = pick ? path.extname(pick.f).slice(1).toLowerCase() : null;
+    return { ...a, file: pick?.f || null, note: notes[ext] || Object.values(notes)[0], available: !!pick, url: pick ? `/downloads/${encodeURIComponent(pick.f)}` : null,
+      size: pick?.s.size || null, version: versions[a.id] || null, updated_at: pick?.s.mtimeMs || null };
   });
-});
+}
+route('GET', '/api/downloads', async () => appBuilds());
 
 function serveStatic(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
   if (rel === '/app' || rel === '/admin') { res.writeHead(301, { Location: rel + '/' }); res.end(); return true; }
   if (rel.endsWith('/')) rel += 'index.html';
   const isDownload = rel.startsWith('/downloads/');
-  const base = isDownload ? DOWNLOADS : PUBLIC;
+  const base = isDownload ? downloadsDir() : PUBLIC;
   const file = path.normalize(path.join(base, isDownload ? rel.slice('/downloads'.length) : rel));
   if (!file.startsWith(base + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return false;
   const ext = path.extname(file);
@@ -62,7 +73,7 @@ function serveStatic(req, res, pathname) {
   if (since && since >= mtime.getTime()) { res.writeHead(304); res.end(); return true; }
   const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': 'no-cache', 'Last-Modified': mtime.toUTCString() };
   // App installers download as files (with a size, so browsers show progress).
-  if (file.startsWith(DOWNLOADS + path.sep)) Object.assign(headers, { 'Content-Disposition': `attachment; filename="${path.basename(file)}"`, 'Content-Length': fs.statSync(file).size });
+  if (isDownload) Object.assign(headers, { 'Content-Disposition': `attachment; filename="${path.basename(file)}"`, 'Content-Length': fs.statSync(file).size });
   res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);
   return true;

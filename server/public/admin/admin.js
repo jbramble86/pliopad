@@ -411,6 +411,7 @@ async function system() {
     ['Data folder', s.data_dir ? h('code', {}, s.data_dir) : h('span', { class: 'status warn' }, 'None: create a folder named pliopad-data next to the app folder')],
     ['Settings file', h('div', {}, h('code', {}, s.config_file), s.config_in_app ? h('div', { class: 'status warn', style: { marginTop: '4px' } }, 'Inside the app folder: a redeploy may remove it. Move it to the data folder.') : null)],
     ['Uploaded files', h('code', {}, s.storage_dir)],
+    ['App downloads', h('div', {}, h('code', {}, s.downloads_dir), ...(s.downloads || []).map((d) => h('div', { style: { marginTop: '4px' } }, `${d.name}: `, d.file ? h('code', {}, d.file + (d.version ? ` (v${d.version})` : '')) : h('span', { class: 'status warn' }, 'not found'))))],
   ];
   shell.body.replaceChildren(h('div', { class: 'tbl health' }, h('table', {}, h('tbody', {}, rows.map(([k, v]) => h('tr', { style: { cursor: 'default' } }, h('td', {}, k), h('td', {}, v)))))));
 }
