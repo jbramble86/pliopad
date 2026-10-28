@@ -12,6 +12,7 @@ desktop/windows/**/obj/
 # Server data and secrets: never in Git (keep them in pliopad-data/ on the host)
 config.json
 server/storage/
+server/logs/
 server/data/
 *.sqlite
 *.sqlite-*
