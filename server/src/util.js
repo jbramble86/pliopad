@@ -7,9 +7,31 @@ import { fileURLToPath } from 'node:url';
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const VERSION = '1.1.0';
 const argConfig = process.argv.find((a) => a.startsWith('--config='))?.slice(9);
-// A relative PLIOPAD_CONFIG (e.g. ../pliopad-data/config.json) is relative to the app folder, so settings can live outside
-// the folder that a redeploy replaces.
-export const CONFIG_FILE = path.resolve(ROOT, process.env.PLIOPAD_CONFIG || argConfig || 'config.json');
+/**
+ * The data folder: settings (config.json), uploaded files (storage/) and app downloads (downloads/) live here, outside the
+ * folder a redeploy replaces. Found automatically: a folder named "pliopad-data" next to the app, or up to three levels
+ * above it (e.g. beside public_html). PLIOPAD_DATA overrides; without either, everything stays in the app folder.
+ */
+function findDataDir() {
+  if (process.env.PLIOPAD_DATA) return path.resolve(ROOT, process.env.PLIOPAD_DATA);
+  for (let dir = path.dirname(ROOT), i = 0; i < 3 && dir !== path.dirname(dir); i++, dir = path.dirname(dir)) {
+    const candidate = path.join(dir, 'pliopad-data');
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) return candidate;
+  }
+  return null;
+}
+export const DATA_DIR = findDataDir();
+
+/** A file or folder in the data folder, falling back to the app folder when it hasn't been moved there yet. */
+export function dataPath(name) {
+  if (!DATA_DIR) return path.join(ROOT, name);
+  const inData = path.join(DATA_DIR, name);
+  const inApp = path.join(ROOT, name);
+  return !fs.existsSync(inData) && fs.existsSync(inApp) ? inApp : inData;
+}
+
+// A relative PLIOPAD_CONFIG is relative to the app folder.
+export const CONFIG_FILE = process.env.PLIOPAD_CONFIG || argConfig ? path.resolve(ROOT, process.env.PLIOPAD_CONFIG || argConfig) : dataPath('config.json');
 
 export class ApiError extends Error {
   constructor(status, message, code = null) {

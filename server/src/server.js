@@ -9,7 +9,7 @@ import { dispatch, route, sendJson } from './http.js';
 import { renderPublicPage, renderInstaller } from './pages.js';
 import { renderLanding } from './landing.js';
 import { startJobs } from './jobs.js';
-import { ROOT, CONFIG_FILE, VERSION, config, reloadConfig, isInstalled, loadSettings, setting, hmac, randomHex, nowMs, ApiError } from './util.js';
+import { ROOT, DATA_DIR, CONFIG_FILE, VERSION, config, reloadConfig, isInstalled, loadSettings, setting, hmac, randomHex, nowMs, ApiError } from './util.js';
 import { hashPassword } from './auth.js';
 import { webhook } from './stripe.js';
 import { createWorkspace } from './seed.js';
@@ -30,7 +30,7 @@ route('GET', '/api/config', async () => ({ app_name: setting('app_name', 'PlioPa
 
 // ---- App downloads: drop builds into the downloads folder (see public/downloads/README.txt) and the web app offers them ----
 // PLIOPAD_DOWNLOADS can point outside the app folder, so large builds stay out of Git and survive redeploys.
-const DOWNLOADS = path.resolve(ROOT, config('downloads', 'public/downloads'));
+const DOWNLOADS = path.resolve(ROOT, config('downloads', DATA_DIR && fs.existsSync(path.join(DATA_DIR, 'downloads')) ? path.join(DATA_DIR, 'downloads') : 'public/downloads'));
 const APPS = [
   { id: 'windows', name: 'Windows', file: 'Pliopad-Windows.zip', note: 'Windows 10 and 11, 64-bit. Unzip and run Pliopad.exe.' },
   { id: 'android', name: 'Android', file: 'Pliopad-Android.apk', note: 'Android 8 or newer. Allow installs from your browser when asked.' },

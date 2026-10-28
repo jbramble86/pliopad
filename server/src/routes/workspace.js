@@ -9,10 +9,10 @@ import { createWorkspace } from '../seed.js';
 import { allPlans, getPlan, limit, checkMembers } from '../plans.js';
 import { saveNote, nextSeq, noteOut, notebookOut, tagOut } from '../notes.js';
 import * as Stripe from '../stripe.js';
-import { ApiError, nowMs, month, setting, sendMail, baseUrl, randomHex, jdec, jenc, uuid, isUuid, config, ROOT } from '../util.js';
+import { ApiError, nowMs, month, setting, sendMail, baseUrl, randomHex, jdec, jenc, uuid, isUuid, config, ROOT, dataPath } from '../util.js';
 
 export const storageDir = () => {
-  const d = path.resolve(ROOT, config('storage', 'storage'));
+  const d = path.resolve(ROOT, config('storage', dataPath('storage')));
   fs.mkdirSync(d, { recursive: true });
   return d;
 };

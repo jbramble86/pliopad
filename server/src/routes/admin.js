@@ -8,7 +8,8 @@ import { allPlans } from '../plans.js';
 import { aiAvailable } from '../ai.js';
 import { stripeEnabled } from '../stripe.js';
 import { wsOut, deleteWorkspace, auditQuery, storageDir } from './workspace.js';
-import { ApiError, nowMs, month, setting, setSetting, jdec, jenc, VERSION, resetMailTransport } from '../util.js';
+import path from 'node:path';
+import { ApiError, nowMs, month, setting, setSetting, jdec, jenc, VERSION, resetMailTransport, ROOT, DATA_DIR, CONFIG_FILE } from '../util.js';
 
 const page = (ctx) => {
   const p = Math.max(1, Number(ctx.query.page || 1));
@@ -235,5 +236,7 @@ route('GET', '/api/admin/system', async (ctx) => {
     uptime_h: Math.round(process.uptime() / 360) / 10, memory_mb: Math.round(process.memoryUsage().rss / 1048576), load: os.loadavg()[0].toFixed(2),
     storage_free_gb: freeGb, storage_writable: writable, ai_ready: aiAvailable(), stripe: stripeEnabled(), mail: !!setting('smtp')?.host,
     jobs_last: setting('jobs_last'),
+    app_dir: ROOT, data_dir: DATA_DIR, config_file: CONFIG_FILE, storage_dir: dir,
+    config_in_app: CONFIG_FILE.startsWith(ROOT + path.sep),
   };
 });

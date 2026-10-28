@@ -401,12 +401,16 @@ async function system() {
   const s = await api('GET', '/admin/system');
   const ok = (v, good = 'Ready', bad = 'Not set up') => h('span', { class: 'status ' + (v ? 'ok' : 'warn') }, v ? good : bad);
   const rows = [
-    ['Pliopad version', s.version], ['Node.js', s.node], ['Database', s.db], ['Schema version', s.schema],
+    ['PlioPad version', s.version], ['Node.js', s.node], ['Database', s.db], ['Schema version', s.schema],
     ['Uptime', `${s.uptime_h} hours`], ['Memory', `${s.memory_mb} MB`], ['Load average', s.load],
     ['File storage', s.storage_writable ? h('span', { class: 'status ok' }, 'Writable') : h('span', { class: 'status bad' }, 'Not writable')],
     ['Free disk', s.storage_free_gb === null ? 'Unknown' : `${s.storage_free_gb} GB`],
     ['Background jobs', s.jobs_last ? `Last ran ${relTime(s.jobs_last)}` : h('span', { class: 'status warn' }, 'Not run yet')],
     ['Email (SMTP)', ok(s.mail)], ['AI (Claude)', ok(s.ai_ready)], ['Stripe billing', ok(s.stripe)],
+    ['App folder', h('code', {}, s.app_dir)],
+    ['Data folder', s.data_dir ? h('code', {}, s.data_dir) : h('span', { class: 'status warn' }, 'None: create a folder named pliopad-data next to the app folder')],
+    ['Settings file', h('div', {}, h('code', {}, s.config_file), s.config_in_app ? h('div', { class: 'status warn', style: { marginTop: '4px' } }, 'Inside the app folder: a redeploy may remove it. Move it to the data folder.') : null)],
+    ['Uploaded files', h('code', {}, s.storage_dir)],
   ];
   shell.body.replaceChildren(h('div', { class: 'tbl health' }, h('table', {}, h('tbody', {}, rows.map(([k, v]) => h('tr', { style: { cursor: 'default' } }, h('td', {}, k), h('td', {}, v)))))));
 }
