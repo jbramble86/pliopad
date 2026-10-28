@@ -30,8 +30,15 @@ function record(kind, err) {
 process.on('uncaughtException', (e) => { record('Crash', e); process.exit(1); });
 process.on('unhandledRejection', (e) => record('Unhandled rejection', e));
 
+// Every start is recorded, so the log shows whether the host ran the app and where it was told to listen.
+const note = (msg) => { try { fs.mkdirSync(logDir(), { recursive: true }); fs.appendFileSync(path.join(logDir(), 'startup.log'), `${new Date().toISOString()} ${msg}\n`); } catch { /* best effort */ } };
+note(`Starting: node ${process.version}, pid ${process.pid}, PORT=${JSON.stringify(process.env.PORT ?? null)}, cwd ${process.cwd()}, app ${ROOT}`);
+
 try {
-  await import('./src/server.js');
+  const { server } = await import('./src/server.js');
+  if (server?.listening) note(`Listening on ${JSON.stringify(server.address())}`);
+  else server?.once('listening', () => note(`Listening on ${JSON.stringify(server.address())}`));
+  server?.once('error', (e) => record('Listen failed', e));
 } catch (e) {
   record('Startup failed', e);
   const port = process.env.PORT || 3000; // a number or a socket path
