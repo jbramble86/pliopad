@@ -1,5 +1,6 @@
 // Shared helpers: config, ids, JSON, errors, settings and mail.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -9,18 +10,28 @@ export const VERSION = '1.1.0';
 const argConfig = process.argv.find((a) => a.startsWith('--config='))?.slice(9);
 /**
  * The data folder: settings (config.json), uploaded files (storage/) and app downloads (downloads/) live here, outside the
- * folder a redeploy replaces. Found automatically: a folder named "pliopad-data" next to the app, or up to three levels
- * above it (e.g. beside public_html). PLIOPAD_DATA overrides; without either, everything stays in the app folder.
+ * folder a redeploy replaces. Found automatically, first match wins:
+ *   PLIOPAD_DATA; "pliopad-data" in any folder above the app; ~/pliopad-data; ~/www/<site>/pliopad-data.
+ * Without one, everything stays in the app folder (local development).
  */
-function findDataDir() {
-  if (process.env.PLIOPAD_DATA) return path.resolve(ROOT, process.env.PLIOPAD_DATA);
-  for (let dir = path.dirname(ROOT), i = 0; i < 3 && dir !== path.dirname(dir); i++, dir = path.dirname(dir)) {
-    const candidate = path.join(dir, 'pliopad-data');
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) return candidate;
+function dataDirCandidates() {
+  const out = [];
+  for (let dir = path.dirname(ROOT); ; dir = path.dirname(dir)) {
+    out.push(path.join(dir, 'pliopad-data'));
+    if (dir === path.dirname(dir)) break;
   }
-  return null;
+  const home = os.homedir();
+  out.push(path.join(home, 'pliopad-data'));
+  try { for (const site of fs.readdirSync(path.join(home, 'www'))) out.push(path.join(home, 'www', site, 'pliopad-data')); } catch { /* no ~/www */ }
+  return [...new Set(out)];
 }
-export const DATA_DIR = findDataDir();
+export const DATA_DIR_SEARCHED = process.env.PLIOPAD_DATA ? [path.resolve(ROOT, process.env.PLIOPAD_DATA)] : dataDirCandidates();
+const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+// A data folder that holds config.json wins over an empty one.
+export let DATA_DIR = process.env.PLIOPAD_DATA ? path.resolve(ROOT, process.env.PLIOPAD_DATA)
+  : DATA_DIR_SEARCHED.find((d) => fs.existsSync(path.join(d, 'config.json'))) || DATA_DIR_SEARCHED.find(isDir) || null;
+/** Where a brand-new install keeps its data when no data folder exists yet: ~/pliopad-data, outside every site folder. */
+export const DEFAULT_DATA_DIR = path.join(os.homedir(), 'pliopad-data');
 
 /** A file or folder in the data folder, falling back to the app folder when it hasn't been moved there yet. */
 export function dataPath(name) {
@@ -31,7 +42,21 @@ export function dataPath(name) {
 }
 
 // A relative PLIOPAD_CONFIG is relative to the app folder.
-export const CONFIG_FILE = process.env.PLIOPAD_CONFIG || argConfig ? path.resolve(ROOT, process.env.PLIOPAD_CONFIG || argConfig) : dataPath('config.json');
+const CONFIG_PINNED = !!(process.env.PLIOPAD_CONFIG || argConfig);
+export let CONFIG_FILE = CONFIG_PINNED ? path.resolve(ROOT, process.env.PLIOPAD_CONFIG || argConfig) : dataPath('config.json');
+
+/**
+ * Where the installer saves settings: the configured file, or a data folder outside the app (created if needed),
+ * never the app folder itself, which a redeploy replaces.
+ */
+export function settingsTarget() {
+  if (CONFIG_PINNED) return CONFIG_FILE;
+  const dir = DATA_DIR || DEFAULT_DATA_DIR;
+  fs.mkdirSync(dir, { recursive: true });
+  DATA_DIR = dir;
+  CONFIG_FILE = path.join(dir, 'config.json');
+  return CONFIG_FILE;
+}
 
 export class ApiError extends Error {
   constructor(status, message, code = null) {

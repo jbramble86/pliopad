@@ -9,7 +9,7 @@ import { dispatch, route, sendJson } from './http.js';
 import { renderPublicPage, renderInstaller } from './pages.js';
 import { renderLanding } from './landing.js';
 import { startJobs } from './jobs.js';
-import { ROOT, DATA_DIR, CONFIG_FILE, VERSION, config, reloadConfig, isInstalled, loadSettings, setting, hmac, randomHex, nowMs, ApiError } from './util.js';
+import { ROOT, DATA_DIR, DATA_DIR_SEARCHED, DEFAULT_DATA_DIR, settingsTarget, CONFIG_FILE, VERSION, config, reloadConfig, isInstalled, loadSettings, setting, hmac, randomHex, nowMs, ApiError } from './util.js';
 import { hashPassword } from './auth.js';
 import { webhook } from './stripe.js';
 import { createWorkspace } from './seed.js';
@@ -107,10 +107,10 @@ async function install(req, res) {
       app_key: randomHex(32),
       base_url: (form.base_url || '').replace(/\/$/, '') || undefined,
       db: form.driver === 'sqlite'
-        ? { driver: 'sqlite', file: path.join(ROOT, 'data.sqlite') }
+        ? { driver: 'sqlite', file: path.join(DATA_DIR || DEFAULT_DATA_DIR, 'data.sqlite') }
         : { driver: 'mysql', host: form.host || 'localhost', database: form.database, user: form.user, password: form.password },
     };
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+    fs.writeFileSync(settingsTarget(), JSON.stringify(cfg, null, 2), { mode: 0o600 });
     reloadConfig();
     await db.init();
     await migrate();
@@ -127,7 +127,7 @@ async function install(req, res) {
     fs.rmSync(CONFIG_FILE, { force: true });
     reloadConfig();
     await db.close().catch(() => {});
-    renderInstaller(res, `Setup failed: ${e.message}`);
+    renderInstaller(res, `Setup failed: ${e.message}`, DATA_DIR_SEARCHED);
   }
 }
 
@@ -139,9 +139,9 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
   try {
     if (!isInstalled()) {
-      if (p.startsWith('/api/')) return sendJson(res, { error: 'Pliopad is not installed yet. Open /install in your browser.' }, 503);
+      if (p.startsWith('/api/')) return sendJson(res, { error: 'PlioPad settings (config.json) were not found. If PlioPad was set up before, put config.json in a pliopad-data folder; see /install for where it looked.', searched: DATA_DIR_SEARCHED }, 503);
       if (p === '/install' && req.method === 'POST') return install(req, res);
-      if (p.startsWith('/app') || p.startsWith('/admin') || p === '/' || p === '/install') return renderInstaller(res);
+      if (p.startsWith('/app') || p.startsWith('/admin') || p === '/' || p === '/install') return renderInstaller(res, '', DATA_DIR_SEARCHED);
     }
     if (p === '/api/stripe/webhook' && req.method === 'POST') {
       await webhook(await readBody(req), req.headers['stripe-signature'] || '');

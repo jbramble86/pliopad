@@ -41,16 +41,17 @@ ${body}${children.length ? `<div class="kids"><hr>${children.map((c) => `<a href
 <footer>Published with ${e(setting('app_name', 'PlioPad'))} · ${e(ws.name)}</footer></main></body></html>`);
 }
 
-export function renderInstaller(res, error = '') {
+export function renderInstaller(res, error = '', searched = []) {
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Install Pliopad</title>
+  res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Install PlioPad</title>
 <style>${BASE_CSS}main{max-width:520px;margin:6vh auto;padding:0 16px 64px}label{display:block;font-size:13px;font-weight:600;margin:14px 0 4px}
 input,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit}
 fieldset{border:1px solid var(--line);border-radius:12px;padding:8px 16px 18px;margin:18px 0}legend{font-weight:600;padding:0 6px}
 button{margin-top:20px;width:100%;padding:12px;border:0;border-radius:8px;background:var(--accent);color:#fff;font-weight:600;font-size:15px;cursor:pointer}
-.err{background:#fee2e2;color:#991b1b;padding:10px 14px;border-radius:8px}.hint{color:var(--muted);font-size:13px}</style></head>
+.err{background:#fee2e2;color:#991b1b;padding:10px 14px;border-radius:8px}.hint{color:var(--muted);font-size:13px}.warn{background:#FFF7E6;color:#7A4B00;border:1px solid #F5D9A8;padding:12px 14px;border-radius:8px;font-size:14px;margin:16px 0}.warn ul{margin:8px 0 0;padding-left:18px}.warn code{font-size:12px;word-break:break-all}</style></head>
 <body><main><h1>Set up Pliopad</h1><p class="hint">This runs once. It creates the database tables and your platform administrator account.</p>
 ${error ? `<p class="err">${e(error)}</p>` : ''}
+<div class="warn"><b>Already using PlioPad?</b> Don't install again. Your settings file (<code>config.json</code>) wasn't found. Put it in a folder named <code>pliopad-data</code> in one of these places, then redeploy:<ul>${searched.slice(0, 12).map((d) => `<li><code>${e(d)}</code></li>`).join('')}</ul></div>
 <form method="post" action="/install">
 <fieldset><legend>Database</legend>
 <label>Type</label><select name="driver"><option value="mysql">MySQL / MariaDB (SiteGround)</option><option value="sqlite">SQLite (local testing only)</option></select>
