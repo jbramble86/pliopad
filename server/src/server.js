@@ -169,7 +169,8 @@ async function main() {
     await loadSettings(db);
     startJobs();
   }
-  const port = Number(process.env.PORT || config('port', 3000));
+  // PORT may be a port number or a socket path (some hosts proxy through a socket); listen() accepts both.
+  const port = process.env.PORT || config('port', 3000);
   for (const w of STARTUP_WARNINGS) console.warn('Warning: ' + w);
   console.log(`Settings file: ${CONFIG_FILE} (${fs.existsSync(CONFIG_FILE) ? 'found' : 'missing'})`);
   console.log(`Data folder: ${DATA_DIR || 'none (using the app folder)'}`);

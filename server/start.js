@@ -34,7 +34,7 @@ try {
   await import('./src/server.js');
 } catch (e) {
   record('Startup failed', e);
-  const port = Number(process.env.PORT || 3000);
+  const port = process.env.PORT || 3000; // a number or a socket path
   const message = String(e?.message || e).replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]);
   http.createServer((req, res) => {
     res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
