@@ -176,6 +176,10 @@ let dbError = null;
 let jobsStarted = false;
 async function connectDatabase() {
   try {
+    // Re-read config.json on every attempt, so fixing the settings file takes effect without a restart.
+    reloadConfig();
+    const dbc = config('db');
+    if (dbc) appLog(`Connecting to ${dbc.driver === 'sqlite' ? dbc.file : `database "${dbc.database}" as "${dbc.user}" on ${dbc.host || 'localhost'}`}`);
     await db.init();
     await migrate();
     await loadSettings(db);
