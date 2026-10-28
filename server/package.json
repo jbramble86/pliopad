@@ -4,12 +4,12 @@
   "private": true,
   "description": "PlioPad: notes and docs (Evernote + Notion style) — API, web app and admin console.",
   "type": "module",
-  "main": "src/server.js",
+  "main": "start.js",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node start.js",
     "dev": "node --watch src/server.js",
     "test": "node --no-warnings --test test/*.test.js"
   },

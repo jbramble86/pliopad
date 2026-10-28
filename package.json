@@ -4,10 +4,11 @@
   "private": true,
   "description": "PlioPad: server, web app, Android and Windows apps. Hosting runs the server from this folder.",
   "type": "module",
+  "main": "server/start.js",
   "workspaces": ["server"],
   "engines": { "node": ">=20" },
   "scripts": {
-    "start": "node server/src/server.js",
+    "start": "node server/start.js",
     "build": "echo PlioPad has no build step",
     "test": "npm test --workspace server"
   }
