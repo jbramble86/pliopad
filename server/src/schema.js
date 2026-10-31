@@ -2,6 +2,7 @@
 import { db } from './db.js';
 import { setSetting, jdec } from './util.js';
 import { fileOrphanPages } from './notes.js';
+import { CATEGORIES, ARTICLES } from './help.js';
 
 export const SCHEMA_VERSION = 2;
 
@@ -53,6 +54,9 @@ const TABLES = {
     created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL, closed_at BIGINT NULL`,
   ticket_messages: `{ID}, ticket_id BIGINT NOT NULL, user_id BIGINT NULL, staff INT NOT NULL DEFAULT 0, kind VARCHAR(10) NOT NULL DEFAULT 'message',
     body {TEXT} NOT NULL, created_at BIGINT NOT NULL`,
+  help_categories: `id VARCHAR(60) PRIMARY KEY, name VARCHAR(120) NOT NULL, icon VARCHAR(16) NULL, sort INT NOT NULL DEFAULT 0`,
+  help_articles: `id VARCHAR(80) PRIMARY KEY, category_id VARCHAR(60) NOT NULL, title VARCHAR(200) NOT NULL, body {TEXT} NOT NULL,
+    sort INT NOT NULL DEFAULT 0, published INT NOT NULL DEFAULT 1, updated_at BIGINT NOT NULL, updated_by BIGINT NULL`,
   ticket_files: `id VARCHAR(36) PRIMARY KEY, ticket_id BIGINT NULL, message_id BIGINT NULL, user_id BIGINT NOT NULL, name VARCHAR(255) NOT NULL,
     mime VARCHAR(120) NOT NULL, size BIGINT NOT NULL, path VARCHAR(255) NOT NULL, created_at BIGINT NOT NULL`,
 };
@@ -96,5 +100,14 @@ export async function migrate() {
   // Read straight from the table: settings are loaded into memory only after migrating.
   const before = Number(jdec(await db.val('SELECT v FROM settings WHERE k=?', ['schema_version']), 0)) || 0;
   if (before < 2) await fileOrphanPages();
+  // The Help center starts with PlioPad's built-in articles; after that they're edited in the admin console.
+  if (!Number(await db.val('SELECT COUNT(*) FROM help_categories'))) await seedHelp();
   await setSetting(db, 'schema_version', SCHEMA_VERSION);
+}
+
+/** The starting Help center: the built-in categories and articles from help.js. */
+async function seedHelp() {
+  const now = Date.now();
+  for (const [i, c] of CATEGORIES.entries()) await db.insert('help_categories', { id: c.id, name: c.name, icon: c.icon, sort: i });
+  for (const [i, a] of ARTICLES.entries()) await db.insert('help_articles', { id: a.id, category_id: a.category, title: a.title, body: a.body, sort: i, published: 1, updated_at: now });
 }

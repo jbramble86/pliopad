@@ -7,7 +7,7 @@ const theme = store.get('theme', 'system');
 if (theme !== 'system') document.documentElement.dataset.theme = theme;
 
 const NAV = [
-  ['overview', 'Overview', 'home'], ['tenants', 'Workspaces', 'book'], ['users', 'Users', 'users'], ['support', 'Support', 'chat'], ['audit', 'Audit log', 'history'],
+  ['overview', 'Overview', 'home'], ['tenants', 'Workspaces', 'book'], ['users', 'Users', 'users'], ['support', 'Support', 'chat'], ['help', 'Help articles', 'page'], ['audit', 'Audit log', 'history'],
   [null, 'Configuration'], ['plans', 'Plans & billing', 'card'], ['settings', 'Settings', 'gear'], ['system', 'System health', 'shield'], ['maintenance', 'Maintenance', 'gear'],
 ];
 let shell = null;
@@ -59,7 +59,7 @@ async function route() {
   shell.body.replaceChildren(h('div', { class: 'empty' }, 'Loading…'));
   document.querySelector('.sheet')?.remove();
   try {
-    await ({ overview, tenants, users, support, audit, plans, settings, system, maintenance }[page] || overview)(arg);
+    await ({ overview, tenants, users, support, help: helpArticles, audit, plans, settings, system, maintenance }[page] || overview)(arg);
   } catch (e) {
     shell.body.replaceChildren(h('div', { class: 'card' }, e.message));
   }
@@ -310,6 +310,116 @@ async function support(id) {
   // Open the request first, so the list shows it as read.
   if (id) await open(id);
   await load();
+}
+
+// ---------- Help articles: what every app's Help center shows ----------
+
+async function helpArticles(openId) {
+  const { articleBody } = await import('/app/js/support-ui.js');
+  let data = await api('GET', '/admin/help');
+  let current = null; // the article in the editor (null: none; {id: null}: new)
+  let dirty = false;
+  const side = h('div', { class: 'hc-side' });
+  const pane = h('div', { class: 'hc-pane' });
+  header('Help articles',
+    h('a', { class: 'btn', href: '/app/#/help', target: '_blank' }, 'View the Help center'),
+    h('button', { class: 'btn', onclick: () => editCategory(null) }, 'New category'),
+    h('button', { class: 'btn primary', onclick: () => guard() && open({ id: null, title: '', body: '', category: data.categories[0]?.id, published: true }) }, 'New article'));
+  const reload = async () => { data = await api('GET', '/admin/help'); drawSide(); };
+  const guard = () => !dirty || confirm('Discard your unsaved changes?');
+  const move = async (list, i, d, key) => {
+    [list[i], list[i + d]] = [list[i + d], list[i]];
+    await api('POST', '/admin/help/order', { [key]: list.map((x) => x.id) });
+    await reload();
+  };
+  const drawSide = () => side.replaceChildren(...data.categories.map((c, ci) => {
+    const arts = data.articles.filter((a) => a.category === c.id);
+    return h('div', { class: 'hc-cat' },
+      h('div', { class: 'hc-cat-head' }, h('span', { class: 'hc-ico' }, c.icon || '📄'), h('b', { class: 'grow ellipsis' }, c.name),
+        h('button', { class: 'btn icon sm', title: 'Move up', disabled: ci === 0, onclick: () => move(data.categories, ci, -1, 'categories') }, '↑'),
+        h('button', { class: 'btn icon sm', title: 'Move down', disabled: ci === data.categories.length - 1, onclick: () => move(data.categories, ci, 1, 'categories') }, '↓'),
+        h('button', { class: 'btn icon sm', title: 'Rename or change icon', onclick: () => editCategory(c) }, icon('gear'))),
+      ...arts.map((a, ai) => h('div', { class: 'hc-row' + (current?.id === a.id ? ' active' : ''), onclick: () => guard() && open(a) },
+        h('span', { class: 'grow ellipsis' }, a.title), a.published ? null : h('span', { class: 'badge' }, 'Draft'),
+        h('button', { class: 'btn icon sm', title: 'Move up', disabled: ai === 0, onclick: (e) => { e.stopPropagation(); move(arts, ai, -1, 'articles'); } }, '↑'),
+        h('button', { class: 'btn icon sm', title: 'Move down', disabled: ai === arts.length - 1, onclick: (e) => { e.stopPropagation(); move(arts, ai, 1, 'articles'); } }, '↓'))),
+      arts.length ? null : h('div', { class: 'muted', style: { fontSize: '12.5px', padding: '4px 8px' } }, 'No articles yet.'));
+  }));
+
+  const open = (a) => {
+    current = { ...a };
+    dirty = false;
+    drawSide();
+    const title = h('input', { class: 'input hc-title', value: a.title, placeholder: 'Article title' });
+    const cat = h('select', { class: 'input sm' }, data.categories.map((c) => h('option', { value: c.id, selected: c.id === a.category }, `${c.icon} ${c.name}`)));
+    const pub = h('input', { type: 'checkbox', checked: a.published });
+    const body = h('textarea', { class: 'input hc-body', rows: 18, placeholder: 'Write the article…' }, a.body);
+    const preview = h('div', { class: 'help-article hc-preview' });
+    const status = h('span', { class: 'muted', style: { fontSize: '12.5px' } }, a.updated_at ? 'Last edited ' + relTime(a.updated_at) : 'Not saved yet');
+    const save = h('button', { class: 'btn primary', disabled: !!a.id }, a.id ? 'Save' : 'Create article');
+    const drawPreview = () => preview.replaceChildren(h('h1', { class: 'help-title' }, title.value || 'Untitled'), ...articleBody(body.value || ''));
+    const changed = () => { dirty = true; save.disabled = false; status.textContent = 'Unsaved changes'; drawPreview(); };
+    [title, body].forEach((el) => el.addEventListener('input', changed));
+    [cat, pub].forEach((el) => el.addEventListener('change', changed));
+    save.onclick = async () => {
+      const out = { title: title.value.trim(), body: body.value, category: cat.value, published: pub.checked };
+      try {
+        const saved = current.id ? await api('PATCH', '/admin/help/articles/' + encodeURIComponent(current.id), out) : await api('POST', '/admin/help/articles', out);
+        toast(current.id ? 'Saved. Every app shows the change now.' : 'Article created');
+        dirty = false;
+        await reload();
+        open(saved);
+        history.replaceState(null, '', '#/help/' + saved.id);
+      } catch (e) { toast(e.message, { error: true }); }
+    };
+    const del = a.id ? h('button', { class: 'btn danger', onclick: async () => {
+      if (!(await confirmBox('Delete this article?', `“${a.title}” disappears from the Help center in every app.`, { ok: 'Delete', danger: true }))) return;
+      await api('DELETE', '/admin/help/articles/' + encodeURIComponent(a.id));
+      current = null; dirty = false;
+      await reload();
+      pane.replaceChildren(h('div', { class: 'empty' }, 'Article deleted.'));
+    } }, 'Delete') : null;
+    pane.replaceChildren(
+      title,
+      h('div', { class: 'row', style: { gap: '14px', margin: '10px 0', flexWrap: 'wrap' } },
+        h('label', { class: 'row', style: { gap: '6px' } }, h('span', { class: 'muted' }, 'Category'), cat),
+        h('label', { class: 'row', style: { gap: '6px' } }, pub, 'Published', h('span', { class: 'muted' }, '(drafts are only visible here)')),
+        a.id ? h('span', { class: 'muted', style: { fontSize: '12.5px' } }, 'Link: /app/#/help/a/' + a.id) : null),
+      h('div', { class: 'hc-edit' },
+        h('div', {}, body, h('div', { class: 'muted', style: { fontSize: '12px', marginTop: '6px' } },
+          'Leave a blank line between paragraphs. Start lines with “- ” for bullets or “1. ” for numbered steps.')),
+        h('div', {}, h('div', { class: 'hc-label' }, 'Preview'), preview)),
+      h('div', { class: 'row', style: { gap: '8px', marginTop: '12px' } }, save, del, h('span', { class: 'grow' }), status));
+    drawPreview();
+    setTimeout(() => (a.id ? body : title).focus(), 30);
+  };
+
+  const editCategory = (c) => {
+    const name = h('input', { class: 'input', value: c?.name || '', placeholder: 'e.g. Integrations' });
+    const ico = h('input', { class: 'input', value: c?.icon || '', placeholder: 'An emoji, e.g. 🔌', style: { width: '120px' } });
+    const body = h('div', {},
+      h('label', { class: 'field' }, h('span', {}, 'Name'), name),
+      h('label', { class: 'field' }, h('span', {}, 'Icon'), ico),
+      h('div', { class: 'row', style: { gap: '8px', marginTop: '12px' } },
+        h('button', { class: 'btn primary', onclick: async () => {
+          try {
+            if (c) await api('PATCH', '/admin/help/categories/' + c.id, { name: name.value, icon: ico.value });
+            else await api('POST', '/admin/help/categories', { name: name.value, icon: ico.value });
+            sheetEl.remove(); await reload();
+          } catch (e) { toast(e.message, { error: true }); }
+        } }, c ? 'Save' : 'Create category'),
+        c ? h('button', { class: 'btn danger', onclick: async () => {
+          try { await api('DELETE', '/admin/help/categories/' + c.id); sheetEl.remove(); await reload(); } catch (e) { toast(e.message, { error: true }); }
+        } }, 'Delete category') : null));
+    const sheetEl = sheet(c ? 'Edit category' : 'New category', body);
+    setTimeout(() => name.focus(), 30);
+  };
+
+  drawSide();
+  shell.body.replaceChildren(h('div', { class: 'hc' }, side, pane));
+  const first = data.articles.find((a) => a.id === openId);
+  if (first) open(first);
+  else pane.replaceChildren(h('div', { class: 'empty' }, 'Pick an article to edit it, or create a new one. Changes show in every app as soon as you save.'));
 }
 
 /** Saved replies: reusable answers for common questions. {name} becomes the customer's first name. */

@@ -1,4 +1,4 @@
-// Attachments for support requests, shared by the Help center and the admin console.
+// Shared by the Help center and the admin console: attachments for support requests, and how articles are shown.
 import { h, icon, toast, fmtBytes } from './ui.js';
 import { uploadSupportFile } from './api.js';
 
@@ -29,4 +29,14 @@ export function messageFiles(files = []) {
   return h('div', { class: 'sp-files' }, files.map((f) => f.mime.startsWith('image/')
     ? h('a', { class: 'sp-thumb', href: f.url, target: '_blank', rel: 'noopener', title: f.name }, h('img', { src: f.url, alt: f.name, loading: 'lazy' }))
     : h('a', { class: 'sp-file', href: f.url, target: '_blank', rel: 'noopener' }, icon('download'), f.name, h('span', { class: 'muted' }, ' · ' + fmtBytes(f.size)))));
+}
+
+/** Article bodies: paragraphs separated by blank lines; "- " and "1. " lines become lists. */
+export function articleBody(text) {
+  return text.split(/\n\s*\n/).map((para) => {
+    const lines = para.split('\n');
+    if (lines.every((l) => /^- /.test(l))) return h('ul', {}, lines.map((l) => h('li', {}, l.slice(2))));
+    if (lines.every((l) => /^\d+\. /.test(l))) return h('ol', {}, lines.map((l) => h('li', {}, l.replace(/^\d+\. /, ''))));
+    return h('p', {}, lines.map((l, i) => [i ? h('br') : null, /^- /.test(l) ? '• ' + l.slice(2) : l]));
+  });
 }

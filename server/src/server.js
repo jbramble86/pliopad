@@ -20,6 +20,7 @@ import './routes/workspace.js';
 import './routes/content.js';
 import './routes/admin.js';
 import './routes/support.js';
+import './routes/help.js';
 
 const PUBLIC = path.join(ROOT, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml',

@@ -3,7 +3,7 @@
 import { h, icon, toast, relTime, fmtDate } from './ui.js';
 import { state, api } from './api.js';
 import { go } from './main.js';
-import { attachPicker, messageFiles } from './support-ui.js';
+import { attachPicker, messageFiles, articleBody } from './support-ui.js';
 
 const KINDS = [['question', 'A question'], ['problem', 'Something isn’t working'], ['billing', 'Billing or my plan'], ['idea', 'A feature idea']];
 const STATUS = { open: ['Waiting for support', 'open'], answered: ['Support replied', 'answered'], on_hold: ['On hold', 'open'], closed: ['Solved', 'closed'] };
@@ -15,16 +15,6 @@ const topbar = (...crumbs) => h('div', { class: 'topbar' },
   h('span', { class: 'crumbs' }, ...crumbs.flatMap((c, i) => [i ? h('span', { class: 'muted' }, ' / ') : null,
     typeof c === 'string' ? h('span', { style: { padding: '2px 6px', color: 'var(--fg)' } }, c) : c])));
 const crumb = (label, href) => h('a', { href, style: { padding: '2px 6px', color: 'var(--muted)' } }, label);
-
-/** Article bodies: paragraphs separated by blank lines; "- " and "1. " lines become lists. */
-function articleBody(text) {
-  return text.split(/\n\s*\n/).map((para) => {
-    const lines = para.split('\n');
-    if (lines.every((l) => /^- /.test(l))) return h('ul', {}, lines.map((l) => h('li', {}, l.slice(2))));
-    if (lines.every((l) => /^\d+\. /.test(l))) return h('ol', {}, lines.map((l) => h('li', {}, l.replace(/^\d+\. /, ''))));
-    return h('p', {}, lines.map((l, i) => [i ? h('br') : null, /^- /.test(l) ? '• ' + l.slice(2) : l]));
-  });
-}
 
 /** The Help center: #/w/<ws>/help, …/help/a/<article>, …/help/new, …/help/t/<ticket>. */
 export async function helpPage(main, kind, id) {

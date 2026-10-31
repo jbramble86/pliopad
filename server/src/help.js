@@ -1,4 +1,5 @@
-// Help center articles: one source for the web, Windows and Android apps (served by GET /api/help).
+// The Help center's starting articles, copied into the database the first time the server starts.
+// After that they're edited in the admin console (Help articles), and the apps load them from GET /api/help.
 // Bodies are short paragraphs separated by blank lines; a line starting with "- " is a list item.
 
 export const CATEGORIES = [

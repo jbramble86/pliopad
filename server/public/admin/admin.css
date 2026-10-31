@@ -118,3 +118,22 @@
 .sp-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .sp-thumb img { display: block; max-width: 220px; max-height: 160px; border-radius: 8px; border: 1px solid var(--line); }
 .sp-file { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); font-size: 13px; }
+
+/* Help articles */
+.hc { display: grid; grid-template-columns: 320px 1fr; gap: 18px; align-items: start; }
+.hc-side { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 0; max-height: calc(100vh - 120px); overflow: auto; }
+.hc-cat { border: 1px solid var(--line); border-radius: 12px; padding: 6px; background: var(--bg); }
+.hc-cat-head { display: flex; align-items: center; gap: 6px; padding: 4px 4px 6px; }
+.hc-ico { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--accent-soft); flex: none; }
+.hc-row { display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 8px; border-radius: 8px; cursor: pointer; font-size: 13.5px; }
+.hc-row:hover { background: var(--bg-hover); } .hc-row.active { background: var(--accent-soft); }
+.btn.icon.sm { width: 24px; height: 24px; font-size: 12px; color: var(--muted); } .btn.icon.sm[disabled] { opacity: .25; }
+.hc-title { font-size: 20px; font-weight: 600; height: 44px; }
+.hc-edit { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.hc-body { font: 14px/1.6 var(--font); min-height: 380px; resize: vertical; }
+.hc-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.hc-preview { border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; background: var(--bg); max-height: 560px; overflow: auto; }
+.hc-preview .help-title { font-size: 22px; margin: 0 0 10px; }
+.help-article { font-size: 15px; line-height: 1.65; } .help-article p { margin: 0 0 12px; } .help-article li { margin: 4px 0; }
+@media (max-width: 1200px) { .hc-edit { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .hc { grid-template-columns: 1fr; } .hc-side { position: static; max-height: none; } }

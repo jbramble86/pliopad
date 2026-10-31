@@ -343,3 +343,30 @@ test('help center: articles, tickets, attachments, notes, assignment, ratings an
   assert.equal((await api('GET', '/api/admin/support/macros', null, owner)).data[0].title, 'Sync help');
   assert.ok((await api('GET', '/api/admin/support/staff', null, owner)).data.length >= 1);
 });
+
+test('help articles are managed in the admin console', async () => {
+  let r = await api('GET', '/api/admin/help', null, owner);
+  assert.ok(r.data.articles.length >= 10, 'starts with the built-in articles');
+  assert.equal((await api('GET', '/api/admin/help', null, member)).status, 403);
+  const cat = (await api('POST', '/api/admin/help/categories', { name: 'Integrations', icon: '🔌' }, owner)).data;
+  assert.equal(cat.id, 'integrations');
+  r = await api('POST', '/api/admin/help/articles', { title: 'Connecting Zapier', category: cat.id, body: 'Step one.', published: false }, owner);
+  const id = r.data.id;
+  assert.equal(id, 'connecting-zapier');
+  let pub = (await api('GET', '/api/help')).data;
+  assert.ok(!pub.articles.some((a) => a.id === id), 'drafts are hidden');
+  assert.ok(!pub.categories.some((c) => c.id === cat.id), 'empty categories are hidden');
+  await api('PATCH', `/api/admin/help/articles/${id}`, { published: true, body: 'Step one.\n\nStep two.' }, owner);
+  pub = (await api('GET', '/api/help')).data;
+  assert.equal(pub.articles.find((a) => a.id === id).body, 'Step one.\n\nStep two.');
+  assert.equal((await api('DELETE', `/api/admin/help/categories/${cat.id}`, null, owner)).status, 409, 'a category with articles is kept');
+  const second = (await api('POST', '/api/admin/help/articles', { title: 'Connecting Zapier', category: cat.id, body: 'x' }, owner)).data;
+  assert.equal(second.id, 'connecting-zapier-2', 'ids stay unique');
+  await api('POST', '/api/admin/help/order', { articles: [second.id, id] }, owner);
+  pub = (await api('GET', '/api/help')).data;
+  const ours = pub.articles.filter((a) => a.category === cat.id).map((a) => a.id);
+  assert.deepEqual(ours, [second.id, id], 'order is saved');
+  await api('DELETE', `/api/admin/help/articles/${id}`, null, owner);
+  await api('DELETE', `/api/admin/help/articles/${second.id}`, null, owner);
+  assert.equal((await api('DELETE', `/api/admin/help/categories/${cat.id}`, null, owner)).status, 200);
+});

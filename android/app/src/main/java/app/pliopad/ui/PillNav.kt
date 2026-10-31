@@ -110,7 +110,7 @@ fun PillNav(
                 .windowInsetsPadding(WindowInsets.navigationBars),
         ) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant.copy(alpha = .6f)))
-            Row(Modifier.fillMaxWidth().height(66.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 NavItem(Icons.Default.Home, "Home", current == PillTab.Home, onHome)
                 NavItem(Icons.AutoMirrored.Filled.Notes, "Notes", current == PillTab.Notes, onNotes)
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -140,11 +140,11 @@ private fun androidx.compose.foundation.layout.RowScope.NavItem(icon: ImageVecto
         Modifier.weight(1f).fillMaxHeight().combinedClickable(role = Role.Tab, onClickLabel = label, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
     ) {
-        Box(Modifier.width(56.dp).height(30.dp).clip(RoundedCornerShape(15.dp)).background(if (selected) cs.primaryContainer else androidx.compose.ui.graphics.Color.Transparent),
+        Box(Modifier.width(52.dp).height(26.dp).clip(RoundedCornerShape(13.dp)).background(if (selected) cs.primaryContainer else androidx.compose.ui.graphics.Color.Transparent),
             contentAlignment = Alignment.Center) {
             Icon(icon, null, tint = if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
         }
-        Text(label, Modifier.padding(top = 3.dp), fontSize = 11.5.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        Text(label, Modifier.padding(top = 1.dp), fontSize = 11.5.sp, lineHeight = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             color = if (selected) cs.onSurface else cs.onSurfaceVariant)
     }
 }

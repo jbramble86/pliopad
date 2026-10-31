@@ -1,4 +1,4 @@
-// Help center and support tickets. Users open requests from any app; platform admins work them in the admin console.
+// Support tickets (the Help center's articles are in routes/help.js). Users open requests from any app; platform admins work them in the admin console.
 //
 // Status:   open (waiting on support) · answered (waiting on the customer) · on_hold · closed
 // Priority: low · normal · high · urgent
@@ -9,7 +9,6 @@ import { Readable } from 'node:stream';
 import { route } from '../http.js';
 import { db } from '../db.js';
 import * as A from '../auth.js';
-import { CATEGORIES, ARTICLES } from '../help.js';
 import { ApiError, nowMs, clampStr, sendMail, setting, setSetting, baseUrl, hmac, uuid, isUuid, dataPath } from '../util.js';
 
 export const STATUSES = ['open', 'answered', 'on_hold', 'closed'];
@@ -97,10 +96,6 @@ route('GET', '/api/support/files/:id/:sig', async (ctx) => {
     'X-Content-Type-Options': 'nosniff', 'Content-Disposition': `${f.mime.startsWith('image/') ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.name)}` });
   fs.createReadStream(file).pipe(ctx.res);
 });
-
-// ---------- Help articles (public) ----------
-
-route('GET', '/api/help', async () => ({ categories: CATEGORIES, articles: ARTICLES }));
 
 // ---------- The user's own requests ----------
 
