@@ -219,6 +219,21 @@ class HomeDragTest : ScreenShotsBase() {
             compose.waitForIdle()
             val order = app.pliopad.ui.HomePrefs.layout(ApplicationProvider.getApplicationContext()).order
             org.junit.Assert.assertTrue("order was $order", order.indexOf("scratch") < order.indexOf("recent"))
+            // A second drag must build on the first, not on the layout edit mode opened with:
+            // drag Quick actions onto the lower half of Jump back in → Quick jot, Jump back in, Quick actions.
+            val source = compose.onAllNodesWithText("Quick actions")[0].fetchSemanticsNode().boundsInRoot
+            val target = compose.onAllNodesWithText("Jump back in")[0].fetchSemanticsNode().boundsInRoot
+            val steps = 30
+            val dy = (target.bottom + 220f - source.center.y) / steps
+            compose.onAllNodesWithText("Quick actions")[0].performTouchInput {
+                down(center)
+                repeat(steps) { moveBy(androidx.compose.ui.geometry.Offset(0f, dy)) }
+                up()
+            }
+            compose.waitForIdle()
+            val after = app.pliopad.ui.HomePrefs.layout(ApplicationProvider.getApplicationContext()).order
+            org.junit.Assert.assertTrue("first move was undone: $after", after.indexOf("scratch") < after.indexOf("recent"))
+            org.junit.Assert.assertTrue("second move missing: $after", after.indexOf("actions") > after.indexOf("recent"))
         }
     }
 }

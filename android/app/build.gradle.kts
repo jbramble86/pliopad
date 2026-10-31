@@ -16,8 +16,8 @@ android {
         applicationId = "app.pliopad"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "1.6.2"
+        versionCode = 17
+        versionName = "1.6.3"
         // The app always talks to pliopad.com; users never enter a server address.
         buildConfigField("String", "SERVER_URL", "\"https://pliopad.com\"")
     }

@@ -74,7 +74,7 @@ public sealed class HomeView : ScrollPage, IRefreshable
             done.Click += (_, _) => { _editing = false; Build(); };
             custom = H(8, Flat(T("Reset", 13), () => { _layout = HomeLayout.Default; SaveLayout(); }, pad: 8), done);
         }
-        else custom = Flat(H(6, I("\uE70F", 13), T("Edit", 13, "PMuted")), () => { _editing = true; Build(); }, "Edit Home", 8);
+        else custom = Flat(H(6, I("\uE70F", 13), T("Edit", 13, "PMuted")), async () => { await R.RefreshMe(); _editing = true; Build(); }, "Edit Home", 8);
         custom.VerticalAlignment = VerticalAlignment.Bottom;
         Grid.SetColumn(custom, 1);
         head.Children.Add(custom);

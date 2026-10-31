@@ -20,10 +20,19 @@ function homeLayout() {
   return { order, hidden: new Set(saved ? saved.hidden || [] : store.get('homeHidden', [])) };
 }
 
-async function saveLayout(order, hidden) {
-  const home = { order, hidden: [...hidden] };
+// Saves go out one at a time, in order, so an older layout can never land after a newer one.
+let saving = Promise.resolve();
+function saveLayout(order, hidden) {
+  const home = { order: [...order], hidden: [...hidden] };
   state.me.user.prefs = { ...(state.me.user.prefs || {}), home };
-  try { await api('PATCH', '/me', { prefs: { home } }); } catch (e) { toast(e.message, { error: true }); }
+  saving = saving.then(() => api('PATCH', '/me', { prefs: { home } })).catch((e) => toast(e.message, { error: true }));
+  return saving;
+}
+
+/** Before editing, take the latest layout from the account (another device may have changed it since this page loaded). */
+async function freshLayout() {
+  await saving;
+  try { state.me.user.prefs = (await api('GET', '/me')).user.prefs; } catch { /* offline: use what we have */ }
 }
 const SCRATCH_TITLE = 'Quick jot';
 // Notes created before the rename are still found.
@@ -195,7 +204,7 @@ export async function homePage(main) {
   };
 
   // ---- Edit Home: drag the real cards around the page, and hide or show them. Changes save as you go. ----
-  const save = () => { saveLayout(order, hidden); homePage(main); };
+  const save = () => { saveLayout(order, hidden); blocksHost.replaceChildren(...blocks()); };
   const editable = (k, el) => {
     const wrap = h('div', { class: 'hw-edit' + (WIDE.has(k) ? ' wide' : '') + (hidden.has(k) ? ' off' : ''), 'data-k': k },
       h('div', { class: 'hw-edit-tools' },
@@ -241,6 +250,7 @@ export async function homePage(main) {
     addEventListener('pointermove', move); addEventListener('pointerup', up); addEventListener('pointercancel', up);
   };
 
+  const blocksHost = h('div', { class: 'home-blocks' }, ...blocks());
   const page = h('div', { class: 'home' },
     h('div', { class: 'home-inner' },
       h('div', { class: 'home-head' },
@@ -248,9 +258,9 @@ export async function homePage(main) {
         editing
           ? h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => { order.splice(0, order.length, ...WIDGETS.map(([k]) => k)); hidden.clear(); save(); } }, 'Reset'),
             h('button', { class: 'btn primary', onclick: () => { editing = false; homePage(main); } }, 'Done'))
-          : h('button', { class: 'btn home-custom', title: 'Edit Home', onclick: () => { editing = true; homePage(main); } }, icon('pencil'), 'Edit')),
+          : h('button', { class: 'btn home-custom', title: 'Edit Home', onclick: async () => { await freshLayout(); editing = true; homePage(main); } }, icon('pencil'), 'Edit')),
       editing ? h('div', { class: 'home-edit-hint' }, 'Drag cards by their handle to move them, and use the eye to hide or show them. Your layout is saved to your account, so every device matches.') : null,
-      ...blocks()));
+      blocksHost));
 
   main.replaceChildren(h('div', { class: 'topbar' },
     h('button', { class: 'btn icon mobile-only', onclick: () => { document.querySelector('.shell').dataset.pane = 'side'; } }, icon('menu')),

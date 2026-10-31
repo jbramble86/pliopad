@@ -94,6 +94,9 @@ public sealed class Repo
     public HomeLayout HomeLayout => HomeLayout.FromPrefs(User?.Prefs)
         ?? HomeLayout.Normalize([], (Pref("homeHidden") ?? "").Split('|', StringSplitOptions.RemoveEmptyEntries));
 
+    // Layout saves go out one at a time, in order; reading the account waits for them, so it never brings back an older layout.
+    private readonly SemaphoreSlim _prefsLock = new(1, 1);
+
     public async Task SaveHomeLayout(HomeLayout layout)
     {
         if (User == null) return;
@@ -101,11 +104,16 @@ public sealed class Repo
         prefs["home"] = layout.ToJson();
         User = User with { Prefs = prefs };
         Store.Set("user", JsonSerializer.Serialize(User, Blocks.Json));
-        try { await Api.SavePrefs(new JsonObject { ["home"] = layout.ToJson() }); } catch { /* offline: this PC keeps it; the account keeps its last layout */ }
+        var body = new JsonObject { ["home"] = layout.ToJson() };
+        await _prefsLock.WaitAsync();
+        try { await Api.SavePrefs(body); } catch { /* offline: this PC keeps it; the account keeps its last layout */ }
+        finally { _prefsLock.Release(); }
     }
 
     public async Task RefreshMe()
     {
+        await _prefsLock.WaitAsync();
+        _prefsLock.Release();
         try { ApplyMe(await Api.Me()); }
         catch (ApiException e) when (e.Status == 401) { await SignOut(); }
         catch { /* offline: keep the cached profile */ }

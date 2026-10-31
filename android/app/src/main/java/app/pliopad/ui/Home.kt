@@ -204,7 +204,7 @@ fun HomeScreen(
     var customizing by remember { mutableStateOf(false) }
     var homeLayout by remember { mutableStateOf(HomePrefs.layout(ctx)) }
     // The layout follows the account: refresh it whenever Home opens (the cached copy shows first and works offline).
-    LaunchedEffect(type == "home") { if (type == "home") runCatching { app.api.me() }.onSuccess { homeLayout = HomePrefs.fromAccount(ctx, it.user.prefs) } }
+    LaunchedEffect(type == "home") { if (type == "home") runCatching { app.api.me() }.onSuccess { homeLayout = HomePrefs.fromAccount(ctx, app.api, it.user.prefs) } }
     val closedStacks = remember { mutableStateOf(setOf<String>()) }
     // Three panes need room: at fold sizes the sidebar tucks into the drawer while a note is open; from 1100dp it always stays.
     val permanent = layout.widthDp >= 1100 || (layout.permanentSidebar && selected.value == null)
@@ -379,7 +379,15 @@ fun HomeScreen(
                     "▦  New database" to { scope.launch { open(repo.createNote(notebookId = null, useDefaultNotebook = false, kind = "db", dbSchema = DEFAULT_DB_SCHEMA)) }; Unit },
                     "🔎  Search" to { nav.navigate("search") },
                     if (s.ai) "✨  Ask AI" to { nav.navigate("ask") } else null,
-                ), layout = homeLayout, editing = customizing, onEdit = { customizing = !customizing },
+                ), layout = homeLayout, editing = customizing,
+                    // Edit starts from the account's latest layout (another device may have changed it).
+                    onEdit = {
+                        if (customizing) customizing = false
+                        else scope.launch {
+                            runCatching { app.api.me() }.onSuccess { homeLayout = HomePrefs.fromAccount(ctx, app.api, it.user.prefs) }
+                            customizing = true
+                        }
+                    },
                     onLayout = { l -> homeLayout = l; scope.launch { HomePrefs.save(ctx, app.api, l) } })
                 else if (notes.isEmpty()) {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {

@@ -97,6 +97,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import java.text.DateFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -136,24 +137,38 @@ object HomePrefs {
         return normalize(p.getString("order", null)?.split(',').orEmpty(), p.getStringSet("hidden", emptySet())!!)
     }
 
-    private fun cache(ctx: Context, l: HomeLayout) = prefs(ctx).edit().putString("order", l.order.joinToString(",")).putStringSet("hidden", l.hidden).apply()
+    private fun cache(ctx: Context, l: HomeLayout, pending: Boolean) =
+        prefs(ctx).edit().putString("order", l.order.joinToString(",")).putStringSet("hidden", l.hidden).putBoolean("pending", pending).apply()
 
-    /** Takes the layout from the account, if it has one. */
-    fun fromAccount(ctx: Context, accountPrefs: kotlinx.serialization.json.JsonObject?): HomeLayout {
+    /** A change made here that the account hasn't confirmed yet (offline, or still sending). */
+    fun pending(ctx: Context) = prefs(ctx).getBoolean("pending", false)
+
+    /**
+     * The layout to show after reading the account: the account's, unless this phone has a change it hasn't sent yet;
+     * then this phone's wins (and is sent), so a slow or failed save never snaps Home back to an older layout.
+     */
+    suspend fun fromAccount(ctx: Context, api: app.pliopad.data.Api, accountPrefs: kotlinx.serialization.json.JsonObject?): HomeLayout {
+        if (pending(ctx)) return layout(ctx).also { save(ctx, api, it) }
         val home = accountPrefs?.get("home") as? kotlinx.serialization.json.JsonObject ?: return layout(ctx)
         fun list(name: String) = (home[name] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }.orEmpty()
-        return normalize(list("order"), list("hidden")).also { cache(ctx, it) }
+        return normalize(list("order"), list("hidden")).also { cache(ctx, it, pending = false) }
     }
 
+    // One save at a time, in order, so an older layout can never land after a newer one.
+    private val saving = kotlinx.coroutines.sync.Mutex()
+
     suspend fun save(ctx: Context, api: app.pliopad.data.Api, l: HomeLayout) {
-        cache(ctx, l)
-        runCatching {
-            api.savePrefs(kotlinx.serialization.json.buildJsonObject {
-                put("home", kotlinx.serialization.json.buildJsonObject {
-                    put("order", kotlinx.serialization.json.JsonArray(l.order.map { kotlinx.serialization.json.JsonPrimitive(it) }))
-                    put("hidden", kotlinx.serialization.json.JsonArray(l.hidden.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+        cache(ctx, l, pending = true)
+        saving.withLock {
+            if (layout(ctx) != l) return // a newer change is queued behind this one; it will be sent instead
+            runCatching {
+                api.savePrefs(kotlinx.serialization.json.buildJsonObject {
+                    put("home", kotlinx.serialization.json.buildJsonObject {
+                        put("order", kotlinx.serialization.json.JsonArray(l.order.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+                        put("hidden", kotlinx.serialization.json.JsonArray(l.hidden.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+                    })
                 })
-            })
+            }.onSuccess { if (layout(ctx) == l) prefs(ctx).edit().putBoolean("pending", false).apply() }
         }
     }
 }
@@ -178,6 +193,8 @@ private class HomeDrag {
 private fun EditableSection(k: String, drag: HomeDrag, layout: HomeLayout, onLayout: (HomeLayout) -> Unit, content: @Composable () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val hidden = k in layout.hidden
+    val current by androidx.compose.runtime.rememberUpdatedState(layout)
+    val save by androidx.compose.runtime.rememberUpdatedState(onLayout)
     val dragging = drag.key == k
     val target = drag.target?.takeIf { it.first == k }
     Column(Modifier.fillMaxWidth().padding(top = 10.dp)
@@ -206,9 +223,9 @@ private fun EditableSection(k: String, drag: HomeDrag, layout: HomeLayout, onLay
                         },
                         onDragEnd = {
                             drag.target?.let { (t, after) ->
-                                val order = layout.order.filter { it != k }.toMutableList()
+                                val order = current.order.filter { it != k }.toMutableList()
                                 order.add(order.indexOf(t) + if (after) 1 else 0, k)
-                                onLayout(layout.copy(order = order))
+                                save(current.copy(order = order))
                             }
                             drag.key = null; drag.target = null
                         },
@@ -220,7 +237,7 @@ private fun EditableSection(k: String, drag: HomeDrag, layout: HomeLayout, onLay
                 Text(HomePrefs.LABEL[k] ?: k, Modifier.padding(start = 4.dp), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = { onLayout(layout.copy(hidden = if (hidden) layout.hidden - k else layout.hidden + k)) }, modifier = Modifier.size(32.dp)) {
+            IconButton(onClick = { save(current.copy(hidden = if (hidden) current.hidden - k else current.hidden + k)) }, modifier = Modifier.size(32.dp)) {
                 Icon(if (hidden) Icons.Default.VisibilityOff else Icons.Default.Visibility, if (hidden) "Show on Home" else "Hide from Home", Modifier.size(18.dp), tint = cs.onSurfaceVariant)
             }
         }
