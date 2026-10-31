@@ -88,6 +88,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -196,6 +197,7 @@ fun HomeScreen(
         else -> "All notes"
     }
     var refreshing by remember { mutableStateOf(false) }
+    var syncReport by remember { mutableStateOf<String?>(null) }
     var wsMenu by remember { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<HomeDialog?>(null) }
@@ -324,8 +326,17 @@ fun HomeScreen(
                 TopAppBar(title = { if (type != "home") Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     navigationIcon = { if (!permanent) IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Default.Menu, "Menu") } },
                     actions = {
-                        Icon(if (pending > 0) Icons.Default.CloudUpload else Icons.Default.CloudDone, if (pending > 0) "$pending changes waiting to sync" else "Synced",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 4.dp))
+                        IconButton(onClick = {
+                            scope.launch {
+                                syncReport = runCatching { app.sync.run(ws) }.fold(
+                                    onSuccess = { app.sync.rejected.takeIf { it.isNotEmpty() }?.let { "These notes were not accepted by the server:\n\n" + it.joinToString("\n") } ?: "Everything is synced." },
+                                    onFailure = { "Sync failed: " + (it.message ?: it.javaClass.simpleName) },
+                                )
+                            }
+                        }) {
+                            Icon(if (pending > 0) Icons.Default.CloudUpload else Icons.Default.CloudDone, if (pending > 0) "$pending changes waiting to sync" else "Synced",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         IconButton(onClick = { nav.navigate("search") }) { Icon(Icons.Default.Search, "Search") }
                         if (type != "home") Box {
                             IconButton(onClick = { sortMenu = true }) { Icon(Icons.AutoMirrored.Filled.Sort, "Sort") }
@@ -435,6 +446,11 @@ fun HomeScreen(
 
     if (permanent) shell()
     else ModalNavigationDrawer(drawerState = drawer, drawerContent = { ModalDrawerSheet(Modifier.width(310.dp)) { sidebar() } }) { shell() }
+
+    syncReport?.let { msg ->
+        AlertDialog(onDismissRequest = { syncReport = null }, confirmButton = { TextButton(onClick = { syncReport = null }) { Text("OK") } },
+            title = { Text("Sync") }, text = { Text(msg) })
+    }
 
     if (customizing) MultiPickDialog("Show or hide on Home", HomePrefs.WIDGETS, label = { it.second },
         sub = { if (it.first in hiddenWidgets) "Hidden · tap to show" else "Shown · tap to hide" }, ok = "Apply", onDismiss = { customizing = false }) { picked ->

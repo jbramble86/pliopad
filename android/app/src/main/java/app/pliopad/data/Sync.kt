@@ -13,6 +13,10 @@ import java.io.File
  */
 class SyncEngine(private val dao: PliopadDao, private val api: Api) {
 
+    /** Notes the server turned down on the last push, as "Title: reason", so the app can say why they are not syncing. */
+    var rejected: List<String> = emptyList()
+        private set
+
     suspend fun run(ws: Long): Int {
         uploadPending(ws)
         push(ws)
@@ -50,6 +54,11 @@ class SyncEngine(private val dao: PliopadDao, private val api: Api) {
             put("notes", JsonArray(notes.map { Api.noteToJson(it) }))
         }
         val res = api.push(ws, body)
+        rejected = res.errors.map { e ->
+            val id = e["id"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+            val title = notes.firstOrNull { it.id == id }?.title?.ifBlank { "Untitled" } ?: "A note"
+            "$title: " + ((e["error"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "rejected")
+        }
         val ok = res.notes.toSet()
         for (n in notes) {
             if (n.id !in ok) continue
