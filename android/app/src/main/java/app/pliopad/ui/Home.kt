@@ -201,8 +201,8 @@ fun HomeScreen(
     var customizing by remember { mutableStateOf(false) }
     var hiddenWidgets by remember { mutableStateOf(HomePrefs.hidden(ctx)) }
     val closedStacks = remember { mutableStateOf(setOf<String>()) }
-    // Never three columns: notebooks, stacks and tags live in the drawer on every screen size; unfolded shows the list and the note.
-    val permanent = false
+    // Three panes need room: at fold sizes the sidebar tucks into the drawer while a note is open; from 1100dp it always stays.
+    val permanent = layout.widthDp >= 1100 || (layout.permanentSidebar && selected.value == null)
     val twoPane = layout.twoPane
 
     /** Opens a note: beside the list on unfolded screens, full screen on a phone. */
@@ -394,7 +394,8 @@ fun HomeScreen(
     // ---------- Layout: phone = one pane; unfolded = sidebar + list + note, split at the hinge when there is one ----------
     val shell: @Composable () -> Unit = {
         val sel = selected.value
-        val showDetail = twoPane && (sel != null || type != "home")
+        // No empty note pane: until a note is open the list takes the room.
+        val showDetail = twoPane && sel != null
         Row(
             Modifier.fillMaxSize().onPreviewKeyEvent { e ->
                 // Hardware keyboard shortcuts (foldables are often used with one).
@@ -421,13 +422,11 @@ fun HomeScreen(
                 val left = if (permanent) layout.sidebarWidth + 1.dp else 0.dp
                 val listWidth = layout.hingeDp?.let { (it - left).coerceIn(280.dp, 560.dp) } ?: ((layout.widthDp.dp - left) * 0.4f).coerceIn(300.dp, 440.dp)
                 Box(Modifier.width(listWidth).fillMaxHeight()) { listPane() }
-                val pillState = LocalPill.current
-                DisposableEffect(pillState, listWidth) { pillState?.paneWidth = listWidth; onDispose { pillState?.paneWidth = null } }
                 if (layout.hingeDp == null) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     if (sel != null) key(sel) {
                         NoteScreen(sel, app, s.ai, onBack = { selected.value = null }, openNote = { selected.value = it }, inPane = true)
-                    } else EmptyPane(type)
+                    }
                 }
             }
         }
@@ -537,15 +536,6 @@ fun HomeScreen(
 }
 
 /** Right-hand pane on unfolded screens before a note is chosen. */
-@Composable
-private fun EmptyPane(type: String) {
-    Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(app.pliopad.R.drawable.brand_mark), null, Modifier.size(56.dp), alpha = 0.35f)
-        Text(if (type == "trash") "Nothing selected" else "Pick a note to open it here", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
-        Text(if (type == "trash") "Tap a note in the trash to restore or delete it." else "Or tap + below to start a new one.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-    }
-}
-
 const val DEFAULT_DB_SCHEMA = """{"props":[{"id":"status","name":"Status","type":"status","options":[{"id":"todo","name":"Not started","color":"gray"},{"id":"doing","name":"In progress","color":"blue"},{"id":"done","name":"Done","color":"green"}]},{"id":"date","name":"Date","type":"date"},{"id":"owner","name":"Owner","type":"person"}],"views":[{"id":"v1","name":"Table","type":"table"},{"id":"v2","name":"Board","type":"board","group":"status"},{"id":"v3","name":"Calendar","type":"calendar","date":"date"}]}"""
 
 @OptIn(ExperimentalFoundationApi::class)

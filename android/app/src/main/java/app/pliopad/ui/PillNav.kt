@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -57,8 +56,6 @@ import androidx.compose.ui.unit.dp
 class PillState {
     var scrolledAway by mutableStateOf(false)
     var drawerOpen by mutableStateOf(false)
-    /** On unfolded screens with a note open beside the list, the bar centres under the list (this wide). */
-    var paneWidth by mutableStateOf<androidx.compose.ui.unit.Dp?>(null)
     /** Set by the visible screen: create a note in its context (e.g. the open notebook). */
     var onNew: (() -> Unit)? by mutableStateOf(null)
     /** Set by the visible screen: the "more ways to create" menu (scan, voice, database…). */
@@ -101,7 +98,6 @@ fun PillNav(
         enter = slideInVertically(tween(220)) { it * 2 } + fadeIn(tween(180)),
         exit = slideOutVertically(tween(200)) { it * 2 } + fadeOut(tween(160)),
     ) {
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
         Surface(
             modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 14.dp),
             shape = RoundedCornerShape(32.dp),
@@ -125,7 +121,6 @@ fun PillNav(
                 PillItem(Icons.Default.CheckBox, "Tasks", current == PillTab.Tasks, onTasks)
                 PillItem(Icons.Default.Search, "Search", current == PillTab.Search, onSearch)
             }
-        }
         }
     }
 }

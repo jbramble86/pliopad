@@ -277,7 +277,7 @@ private fun MainNav(activity: MainActivity, app: PliopadApp, s: SessionData) {
         nav.navigate(r) { popUpTo(nav.graph.findStartDestination().id) { inclusive = r == "list/home/-" }; launchSingleTop = true }
     }
     Box(Modifier.fillMaxSize().nestedScroll(pill.scroll)) {
-    CompositionLocalProvider(LocalPill provides pill) {
+    CompositionLocalProvider(LocalPill provides (if (twoPane) null else pill)) {
     // Short, simple transitions: the default cross-fade felt sluggish.
     NavHost(nav, startDestination = "list/home/-",
         enterTransition = { fadeIn(tween(160)) + slideInHorizontally(tween(200)) { it / 12 } },
@@ -299,7 +299,7 @@ private fun MainNav(activity: MainActivity, app: PliopadApp, s: SessionData) {
     }
     }
     PillNav(
-        visible = (route == "list/{type}/{arg}" || route == "tasks") && !pill.scrolledAway && !pill.drawerOpen,
+        visible = !twoPane && (route == "list/{type}/{arg}" || route == "tasks") && !pill.scrolledAway && !pill.drawerOpen,
         current = when { route == "tasks" -> PillTab.Tasks; listType == "home" -> PillTab.Home; listType != null -> PillTab.Notes; else -> PillTab.None },
         onHome = { goTop("list/home/-") },
         onNotes = { goTop("list/all/-") },
@@ -307,7 +307,7 @@ private fun MainNav(activity: MainActivity, app: PliopadApp, s: SessionData) {
         onNewMenu = pill.onNewMenu,
         onTasks = { goTop("tasks") },
         onSearch = { nav.navigate("search") },
-        modifier = Modifier.align(Alignment.BottomStart).then(pill.paneWidth?.let { Modifier.width(it) } ?: Modifier.fillMaxWidth()),
+        modifier = Modifier.align(Alignment.BottomCenter),
     )
     val maintenance by Maintenance.notice.collectAsState()
     maintenance?.let { MaintenanceBanner(it, Modifier.align(Alignment.TopCenter)) }
