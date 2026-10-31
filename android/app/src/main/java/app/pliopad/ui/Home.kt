@@ -202,7 +202,9 @@ fun HomeScreen(
     var sortMenu by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<HomeDialog?>(null) }
     var customizing by remember { mutableStateOf(false) }
-    var hiddenWidgets by remember { mutableStateOf(HomePrefs.hidden(ctx)) }
+    var homeLayout by remember { mutableStateOf(HomePrefs.layout(ctx)) }
+    // The layout follows the account: refresh it whenever Home opens (the cached copy shows first and works offline).
+    LaunchedEffect(type == "home") { if (type == "home") runCatching { app.api.me() }.onSuccess { homeLayout = HomePrefs.fromAccount(ctx, it.user.prefs) } }
     val closedStacks = remember { mutableStateOf(setOf<String>()) }
     // Three panes need room: at fold sizes the sidebar tucks into the drawer while a note is open; from 1100dp it always stays.
     val permanent = layout.widthDp >= 1100 || (layout.permanentSidebar && selected.value == null)
@@ -377,7 +379,7 @@ fun HomeScreen(
                     "▦  New database" to { scope.launch { open(repo.createNote(notebookId = null, useDefaultNotebook = false, kind = "db", dbSchema = DEFAULT_DB_SCHEMA)) }; Unit },
                     "🔎  Search" to { nav.navigate("search") },
                     if (s.ai) "✨  Ask AI" to { nav.navigate("ask") } else null,
-                ), onCustomize = { customizing = true }, hidden = hiddenWidgets)
+                ), onCustomize = { customizing = true }, layout = homeLayout)
                 else if (notes.isEmpty()) {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Spacer(Modifier.height(80.dp))
@@ -452,11 +454,7 @@ fun HomeScreen(
             title = { Text("Sync") }, text = { Text(msg) })
     }
 
-    if (customizing) MultiPickDialog("Show or hide on Home", HomePrefs.WIDGETS, label = { it.second },
-        sub = { if (it.first in hiddenWidgets) "Hidden · tap to show" else "Shown · tap to hide" }, ok = "Apply", onDismiss = { customizing = false }) { picked ->
-        hiddenWidgets = hiddenWidgets.toMutableSet().apply { picked.forEach { (k, _) -> if (!add(k)) remove(k) } }
-        HomePrefs.setHidden(ctx, hiddenWidgets)
-    }
+    if (customizing) CustomizeHomeDialog(homeLayout, onChange = { l -> homeLayout = l; scope.launch { HomePrefs.save(ctx, app.api, l) } }) { customizing = false }
 
     // ---------- Dialogs and sheets ----------
     val toast: (String) -> Unit = { Toast.makeText(ctx, it, Toast.LENGTH_SHORT).show() }

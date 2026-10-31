@@ -90,6 +90,20 @@ public sealed class Repo
         Store.Set("ai", me.Ai ? "1" : "0");
     }
 
+    /// <summary>The Home layout from the account; the copy on this PC (or the old show/hide setting) when offline.</summary>
+    public HomeLayout HomeLayout => HomeLayout.FromPrefs(User?.Prefs)
+        ?? HomeLayout.Normalize([], (Pref("homeHidden") ?? "").Split('|', StringSplitOptions.RemoveEmptyEntries));
+
+    public async Task SaveHomeLayout(HomeLayout layout)
+    {
+        if (User == null) return;
+        var prefs = User.Prefs?.DeepClone() as JsonObject ?? [];
+        prefs["home"] = layout.ToJson();
+        User = User with { Prefs = prefs };
+        Store.Set("user", JsonSerializer.Serialize(User, Blocks.Json));
+        try { await Api.SavePrefs(new JsonObject { ["home"] = layout.ToJson() }); } catch { /* offline: this PC keeps it; the account keeps its last layout */ }
+    }
+
     public async Task RefreshMe()
     {
         try { ApplyMe(await Api.Me()); }

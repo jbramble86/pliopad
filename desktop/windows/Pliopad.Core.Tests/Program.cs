@@ -102,6 +102,17 @@ await Test("PlioSphere discovers links: mentions, shared tags, similar wording",
     await Task.CompletedTask;
 });
 
+await Test("home layout: account order, old keys, new sections, grouping", async () =>
+{
+    var prefs = System.Text.Json.Nodes.JsonNode.Parse("{\"home\":{\"order\":[\"tasks\",\"recent\",\"edited\",\"gone\"],\"hidden\":[\"edited\"]}}") as System.Text.Json.Nodes.JsonObject;
+    var l = HomeLayout.FromPrefs(prefs)!;
+    Eq("tasks,recent,updated,actions,scratch,shortcuts,reminders,notebooks", string.Join(",", l.Order), "order");
+    True(l.Hidden.SetEquals(["updated"]), "old key mapped");
+    Eq("tasks|recent|actions|scratch,shortcuts,reminders,notebooks", string.Join("|", l.Groups().Select(g => string.Join(",", g))), "groups");
+    Eq(null, HomeLayout.FromPrefs(null), "no account layout");
+    await Task.CompletedTask;
+});
+
 await Test("store: local edits are dirty, notebooks and stacks", async () =>
 {
     var repo = new Repo(TempDir());

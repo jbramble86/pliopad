@@ -117,6 +117,9 @@ class Api(private val server: () -> String, private val token: () -> String?) {
         return json.decodeFromString(AiResult.serializer(), call("POST", "/w/$ws/ai", body))
     }
 
+    /** Merges these into the account's preferences (e.g. the Home layout), shared by every device. */
+    suspend fun savePrefs(prefs: JsonObject) { call("PATCH", "/me", buildJsonObject { put("prefs", prefs) }) }
+
     // ---- Online-only features (comments, history, publishing, server search, Ask AI) ----
 
     suspend fun comments(ws: Long, noteId: String): List<Comment> =

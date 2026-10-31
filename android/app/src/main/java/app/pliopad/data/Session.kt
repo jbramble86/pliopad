@@ -15,7 +15,7 @@ import kotlinx.serialization.builtins.ListSerializer
 private val Context.store by preferencesDataStore("session")
 
 @Serializable data class Workspace(val id: Long, val name: String, val role: String = "member", val plan: String = "free")
-@Serializable data class User(val id: Long, val email: String, val name: String, val color: String? = null)
+@Serializable data class User(val id: Long, val email: String, val name: String, val color: String? = null, val prefs: kotlinx.serialization.json.JsonObject? = null)
 
 data class SessionData(
     val server: String = "",

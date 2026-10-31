@@ -61,6 +61,9 @@ public sealed class Api(Func<string> server, Func<string?> token)
         Decode<MeResponse>(await Call(HttpMethod.Post, "/auth/signup",
             new Dictionary<string, string> { ["name"] = name, ["email"] = email, ["password"] = password, ["device"] = "Windows" }, auth: false, baseUrl: serverUrl));
 
+    /// <summary>Merges these into the account's preferences (e.g. the Home layout), shared by every device.</summary>
+    public Task SavePrefs(JsonObject prefs) => Call(HttpMethod.Patch, "/me", new JsonObject { ["prefs"] = prefs });
+
     public async Task<MeResponse> Me() => Decode<MeResponse>(await Call(HttpMethod.Get, "/me"));
 
     public async Task Logout() { try { await Call(HttpMethod.Post, "/auth/logout"); } catch { } }

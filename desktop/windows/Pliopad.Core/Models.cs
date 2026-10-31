@@ -72,7 +72,8 @@ public sealed record User(
     [property: JsonPropertyName("id")] long Id,
     [property: JsonPropertyName("email")] string Email,
     [property: JsonPropertyName("name")] string Name,
-    [property: JsonPropertyName("color")] string? Color = null);
+    [property: JsonPropertyName("color")] string? Color = null,
+    [property: JsonPropertyName("prefs")] System.Text.Json.Nodes.JsonObject? Prefs = null);
 
 // ---- Server shapes ----
 

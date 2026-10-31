@@ -32,6 +32,8 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Star
@@ -56,6 +58,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -93,12 +98,79 @@ object Visits {
 }
 
 /** Which widgets the person hid with Customize. */
+/** The Home layout: which sections show, in what order. Saved to the account (same on web, Windows and Android), cached here for offline. */
+data class HomeLayout(val order: List<String>, val hidden: Set<String>)
+
 object HomePrefs {
-    val WIDGETS = listOf("recent" to "Jump back in", "scratch" to "Quick jot", "tasks" to "Tasks", "shortcuts" to "Pinned",
-        "reminders" to "Reminders", "notebooks" to "Notebooks", "edited" to "Recently edited")
+    val WIDGETS = listOf("actions" to "Quick actions", "recent" to "Jump back in", "scratch" to "Quick jot", "tasks" to "Tasks", "shortcuts" to "Pinned",
+        "reminders" to "Reminders", "notebooks" to "Notebooks", "updated" to "Recently edited")
+    val LABEL = WIDGETS.toMap()
+    /** Full-width sections; the rest sit side by side in columns. */
+    val WIDE = setOf("actions", "recent")
+    val DEFAULT = HomeLayout(WIDGETS.map { it.first }, emptySet())
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("home", Context.MODE_PRIVATE)
-    fun hidden(ctx: Context): Set<String> = prefs(ctx).getStringSet("hidden", emptySet())!!
-    fun setHidden(ctx: Context, v: Set<String>) = prefs(ctx).edit().putStringSet("hidden", v).apply()
+    // Older builds called "Recently edited" "edited".
+    private fun key(k: String) = if (k == "edited") "updated" else k
+
+    /** Every known section once, unknown ones dropped, new ones appended. */
+    private fun normalize(order: List<String>, hidden: Collection<String>) =
+        HomeLayout((order.map(::key).filter { it in LABEL } + DEFAULT.order).distinct(), hidden.map(::key).filter { it in LABEL }.toSet())
+
+    fun layout(ctx: Context): HomeLayout {
+        val p = prefs(ctx)
+        return normalize(p.getString("order", null)?.split(',').orEmpty(), p.getStringSet("hidden", emptySet())!!)
+    }
+
+    private fun cache(ctx: Context, l: HomeLayout) = prefs(ctx).edit().putString("order", l.order.joinToString(",")).putStringSet("hidden", l.hidden).apply()
+
+    /** Takes the layout from the account, if it has one. */
+    fun fromAccount(ctx: Context, accountPrefs: kotlinx.serialization.json.JsonObject?): HomeLayout {
+        val home = accountPrefs?.get("home") as? kotlinx.serialization.json.JsonObject ?: return layout(ctx)
+        fun list(name: String) = (home[name] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }.orEmpty()
+        return normalize(list("order"), list("hidden")).also { cache(ctx, it) }
+    }
+
+    suspend fun save(ctx: Context, api: app.pliopad.data.Api, l: HomeLayout) {
+        cache(ctx, l)
+        runCatching {
+            api.savePrefs(kotlinx.serialization.json.buildJsonObject {
+                put("home", kotlinx.serialization.json.buildJsonObject {
+                    put("order", kotlinx.serialization.json.JsonArray(l.order.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+                    put("hidden", kotlinx.serialization.json.JsonArray(l.hidden.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+                })
+            })
+        }
+    }
+}
+
+/** Customize Home: show or hide each section and move it up or down. Changes apply as you make them. */
+@Composable
+fun CustomizeHomeDialog(layout: HomeLayout, onChange: (HomeLayout) -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Customize Home") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("Your layout is saved to your account and used on every device.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp))
+                layout.order.forEachIndexed { i, k ->
+                    val shown = k !in layout.hidden
+                    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(shown, { onChange(layout.copy(hidden = if (shown) layout.hidden + k else layout.hidden - k)) })
+                        Text(HomePrefs.LABEL[k] ?: k, Modifier.weight(1f), color = if (shown) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                        IconButton(onClick = { onChange(layout.copy(order = layout.order.toMutableList().apply { add(i - 1, removeAt(i)) })) }, enabled = i > 0) {
+                            Icon(Icons.Default.KeyboardArrowUp, "Move up")
+                        }
+                        IconButton(onClick = { onChange(layout.copy(order = layout.order.toMutableList().apply { add(i + 1, removeAt(i)) })) }, enabled = i < layout.order.size - 1) {
+                            Icon(Icons.Default.KeyboardArrowDown, "Move down")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        dismissButton = { TextButton(onClick = { onChange(HomePrefs.DEFAULT) }) { Text("Reset") } },
+    )
 }
 
 const val SCRATCH_TITLE = "Quick jot"
@@ -124,11 +196,90 @@ private fun scratchBlocks(text: String, old: List<Block>): List<Block> =
 /** One widget on Home: a title row and its content, drawn as a quiet rounded card. */
 private class Widget(val key: String, val title: String, val icon: ImageVector, val action: Pair<String, () -> Unit>? = null, val content: @Composable () -> Unit)
 
+/** Each Home section has its own colour (same on web and Windows). */
+private val ACCENT = mapOf("scratch" to Color(0xFFF5A524), "tasks" to Color(0xFF647BFF), "shortcuts" to Color(0xFF9B7BFF),
+    "reminders" to Color(0xFFFF7A70), "notebooks" to Color(0xFF2FBF8A), "updated" to Color(0xFF3BA7FF), "recent" to Color(0xFF647BFF))
+private val TINTS = listOf(0xFF647BFF, 0xFF2FBF8A, 0xFFFF7A70, 0xFFF5A524, 0xFF9B7BFF, 0xFF3BA7FF, 0xFFEC6FB0).map { Color(it) }
+/** A steady colour per note or notebook, from its id. */
+private fun tint(id: String?): Color = TINTS[((id ?: "").fold(7L) { a, c -> (a * 31 + c.code) and 0xFFFFFFFFL } % TINTS.size).toInt()]
+
+private val LATE = Color(0xFFEF4444)
+private val TODAY = Color(0xFFF5A524)
+private val SOON = Color(0xFF647BFF)
+
+/** At a glance: how many to-dos are overdue, due today, coming up or undated. */
+@Composable
+private fun TaskSummary(tasks: List<Blocks.Task>, today: String) {
+    val cs = MaterialTheme.colorScheme
+    val groups = listOf(Triple("Overdue", LATE, tasks.count { it.due != null && it.due < today }), Triple("Today", TODAY, tasks.count { it.due == today }),
+        Triple("Upcoming", SOON, tasks.count { it.due != null && it.due > today }), Triple("No date", cs.outlineVariant, tasks.count { it.due == null })).filter { it.third > 0 }
+    Row(Modifier.fillMaxWidth().padding(top = 2.dp).height(8.dp).clip(RoundedCornerShape(4.dp)), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        groups.forEach { (_, color, n) -> Box(Modifier.weight(n.toFloat()).fillMaxHeight().background(color)) }
+    }
+    FlowRow(Modifier.padding(top = 8.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        groups.forEach { (label, color, n) ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(8.dp).background(color, RoundedCornerShape(2.dp)))
+                Text("$n", Modifier.padding(start = 5.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(" $label", fontSize = 12.sp, color = cs.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/** Notes edited per day over the last two weeks, as small bars. */
+@Composable
+private fun Activity(all: List<NoteEntity>) {
+    val start = remember { java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli() }
+    val day = 86_400_000L
+    val counts = IntArray(14).also { c -> all.forEach { n -> val d = ((start + day - n.updatedAt) / day).toInt(); if (n.updatedAt <= start + day && d in 0..13) c[13 - d]++ } }
+    val max = (counts.maxOrNull() ?: 0).coerceAtLeast(1)
+    val blue = ACCENT.getValue("updated")
+    Row(Modifier.fillMaxWidth().height(44.dp).padding(top = 2.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
+        counts.forEachIndexed { i, c ->
+            Box(Modifier.weight(1f).fillMaxHeight((c.toFloat() / max).coerceAtLeast(.08f)).background(if (i == 13) blue else blue.copy(alpha = .35f), RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)))
+        }
+    }
+}
+
+/** A pinned note as a small coloured tile. */
+@Composable
+private fun PinTile(n: NoteEntity, modifier: Modifier, onClick: () -> Unit) {
+    val t = tint(n.id)
+    Surface(onClick = onClick, shape = RoundedCornerShape(12.dp), color = t.copy(alpha = .12f), border = BorderStroke(1.dp, t.copy(alpha = .28f)), modifier = modifier.heightIn(min = 74.dp)) {
+        Column(Modifier.padding(10.dp)) {
+            Text(n.icon ?: if (n.kind == "db") "▦" else "📄", fontSize = 20.sp)
+            Text(n.title.ifBlank { "Untitled" }, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 17.sp,
+                modifier = Modifier.padding(top = 6.dp))
+        }
+    }
+}
+
+/** A reminder with a little calendar chip for its date. */
+@Composable
+private fun ReminderLine(n: NoteEntity, onClick: () -> Unit) {
+    val coral = ACCENT.getValue("reminders")
+    val at = java.time.Instant.ofEpochMilli(n.reminderAt!!).atZone(java.time.ZoneId.systemDefault())
+    val due = n.reminderAt < System.currentTimeMillis()
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.size(38.dp, 40.dp).background(if (due) coral else coral.copy(alpha = .14f), RoundedCornerShape(9.dp)),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Text(at.format(DateTimeFormatter.ofPattern("MMM")).uppercase(), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, letterSpacing = .6.sp, lineHeight = 10.sp,
+                color = if (due) Color.White else Color(0xFFE2554B))
+            Text(at.dayOfMonth.toString(), fontSize = 16.sp, fontWeight = FontWeight.Bold, lineHeight = 18.sp, color = if (due) Color.White else Color(0xFFE2554B))
+        }
+        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+            Text(n.title.ifBlank { "Untitled" }, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
+            Text(at.format(DateTimeFormatter.ofPattern("EEE h:mm a")), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class, kotlinx.coroutines.FlowPreview::class)
 @Composable
 fun HomeDashboard(
     app: PliopadApp, s: SessionData, onOpen: (String) -> Unit, onList: (String, String) -> Unit, onCreate: () -> Unit,
-    quickActions: List<Pair<String, () -> Unit>>, onCustomize: () -> Unit, hidden: Set<String>,
+    quickActions: List<Pair<String, () -> Unit>>, onCustomize: () -> Unit, layout: HomeLayout,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -150,7 +301,7 @@ fun HomeDashboard(
     val widgets = listOf(
         Widget("scratch", SCRATCH_TITLE, Icons.Default.EditNote) { ScratchPad(app, all) },
         Widget("tasks", "Tasks", Icons.Default.CheckBox, if (tasks.isNotEmpty()) "View all" to { onList("tasks", "-") } else null) {
-            if (tasks.isEmpty()) Empty("Nothing to do. Add “[ ]” to a note.")
+            if (tasks.isEmpty()) Empty("Nothing to do. Add “[ ]” to a note.") else TaskSummary(tasks, today)
             tasks.sortedWith(compareBy({ it.due == null }, { it.due })).take(6).forEach { t ->
                 Row(Modifier.fillMaxWidth().clickable { onOpen(t.noteId) }.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(false, { scope.launch { app.repo.toggleTask(t.noteId, t.blockId) } }, Modifier.size(32.dp), colors = CheckboxDefaults.colors(uncheckedColor = cs.outline))
@@ -164,28 +315,44 @@ fun HomeDashboard(
         },
         Widget("shortcuts", "Pinned", Icons.Default.Star) {
             if (pinned.isEmpty()) Empty("Star a note to pin it here.")
-            pinned.take(6).forEach { NoteLine(it, null) { onOpen(it.id) } }
+            pinned.take(6).chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    pair.forEach { n -> PinTile(n, Modifier.weight(1f)) { onOpen(n.id) } }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
         },
         Widget("reminders", "Reminders", Icons.Default.Notifications) {
             val upcoming = reminders.filter { !it.reminderDone }.take(5)
             if (upcoming.isEmpty()) Empty("No upcoming reminders.")
-            upcoming.forEach { n -> NoteLine(n, DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(n.reminderAt!!))) { onOpen(n.id) } }
+            upcoming.forEach { n -> ReminderLine(n) { onOpen(n.id) } }
         },
         Widget("notebooks", "Notebooks", Icons.AutoMirrored.Filled.MenuBook) {
             if (notebooks.isEmpty()) Empty("No notebooks yet.")
+            val counts = notebooks.associate { nb -> nb.id to all.count { it.notebookId == nb.id } }
+            val most = (counts.values.maxOrNull() ?: 0).coerceAtLeast(1)
             notebooks.take(8).forEach { nb ->
-                val count = all.count { it.notebookId == nb.id }
-                Row(Modifier.fillMaxWidth().clickable { onList("nb", nb.id) }.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(nb.icon ?: "📓", Modifier.width(28.dp))
-                    Text(nb.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
-                    Text(count.toString(), fontSize = 12.sp, color = cs.onSurfaceVariant)
+                val count = counts[nb.id] ?: 0
+                val t = tint(nb.id)
+                Row(Modifier.fillMaxWidth().clickable { onList("nb", nb.id) }.heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(34.dp).background(t.copy(alpha = .16f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) { Text(nb.icon ?: "📓", fontSize = 17.sp) }
+                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(nb.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
+                            Text(if (count == 1) "1 note" else "$count notes", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                        }
+                        Box(Modifier.padding(top = 5.dp).fillMaxWidth().height(4.dp).background(cs.outlineVariant.copy(alpha = .5f), RoundedCornerShape(2.dp))) {
+                            Box(Modifier.fillMaxWidth((count.toFloat() / most).coerceAtLeast(.04f)).fillMaxHeight().background(t, RoundedCornerShape(2.dp)))
+                        }
+                    }
                 }
             }
         },
-        Widget("edited", "Recently edited", Icons.Default.Schedule) {
-            all.sortedByDescending { it.updatedAt }.take(6).forEach { n -> NoteLine(n, relative(n.updatedAt)) { onOpen(n.id) } }
+        Widget("updated", "Recently edited", Icons.Default.Schedule) {
+            Activity(all)
+            all.sortedByDescending { it.updatedAt }.take(5).forEach { n -> NoteLine(n, relative(n.updatedAt)) { onOpen(n.id) } }
         },
-    ).filter { it.key !in hidden }
+    ).associateBy { it.key }
 
     // Sized from the pane it sits in (it can be a narrow left pane on an unfolded screen), not from the whole screen.
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -202,30 +369,40 @@ fun HomeDashboard(
                     }
                     IconButton(onClick = onCustomize) { Icon(Icons.Default.Tune, "Customize Home", tint = cs.onSurfaceVariant) }
                 }
-                // Quick actions wrap onto a second line instead of running off the edge.
-                FlowRow(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    quickActions.forEachIndexed { i, (label, run) ->
-                        Surface(onClick = run, shape = RoundedCornerShape(20.dp), color = if (i == 0) cs.primary else cs.surfaceVariant.copy(alpha = .7f)) {
-                            Text(label, Modifier.padding(horizontal = 14.dp, vertical = 9.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium,
-                                color = if (i == 0) cs.onPrimary else cs.onSurface)
+                // Sections in the saved order: wide ones on their own, runs of the others as cards in 1–3 columns.
+                val groups = mutableListOf<List<String>>()
+                for (k in layout.order.filter { it !in layout.hidden }) {
+                    val last = groups.lastOrNull()
+                    if (last == null || k in HomePrefs.WIDE || last.first() in HomePrefs.WIDE) groups += listOf(k) else groups[groups.lastIndex] = last + k
+                }
+                groups.forEach { group ->
+                    when (group.first()) {
+                        // Quick actions wrap onto a second line instead of running off the edge.
+                        "actions" -> FlowRow(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            quickActions.forEachIndexed { i, (label, run) ->
+                                Surface(onClick = run, shape = RoundedCornerShape(20.dp), color = if (i == 0) cs.primary else cs.surfaceVariant.copy(alpha = .7f)) {
+                                    Text(label, Modifier.padding(horizontal = 14.dp, vertical = 9.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                        color = if (i == 0) cs.onPrimary else cs.onSurface)
+                                }
+                            }
                         }
-                    }
-                }
-
-                if ("recent" !in hidden && recent.isNotEmpty()) {
-                    SectionLabel(Icons.Default.History, "Jump back in", Modifier.padding(top = 28.dp, bottom = 10.dp))
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        recent.forEach { n -> RecentCard(n) { onOpen(n.id) } }
-                    }
-                }
-
-                // Widgets: tidy cards in 1–3 columns.
-                Spacer(Modifier.height(24.dp))
-                val cols = columns.coerceAtMost(widgets.size.coerceAtLeast(1))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    for (c in 0 until cols) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            widgets.filterIndexed { i, _ -> i % cols == c }.forEach { WidgetCard(it) }
+                        "recent" -> if (recent.isNotEmpty()) {
+                            SectionLabel(Icons.Default.History, "Jump back in", Modifier.padding(top = 28.dp, bottom = 10.dp))
+                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                recent.forEach { n -> RecentCard(n) { onOpen(n.id) } }
+                            }
+                        }
+                        else -> {
+                            val cards = group.mapNotNull { widgets[it] }
+                            Spacer(Modifier.height(24.dp))
+                            val cols = columns.coerceAtMost(cards.size.coerceAtLeast(1))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                for (c in 0 until cols) {
+                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                        cards.filterIndexed { i, _ -> i % cols == c }.forEach { WidgetCard(it) }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -246,12 +423,15 @@ private fun SectionLabel(icon: ImageVector, title: String, modifier: Modifier = 
 @Composable
 private fun WidgetCard(w: Widget) {
     val cs = MaterialTheme.colorScheme
-    Surface(shape = RoundedCornerShape(14.dp), color = cs.surfaceVariant.copy(alpha = .35f), border = BorderStroke(1.dp, cs.outlineVariant.copy(alpha = .6f)),
-        modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = 14.dp, end = 10.dp, top = 6.dp, bottom = 10.dp)) {
-            Row(Modifier.fillMaxWidth().heightIn(min = 36.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(w.icon, null, Modifier.size(16.dp), tint = cs.onSurfaceVariant)
-                Text(w.title, Modifier.padding(start = 8.dp).weight(1f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+    val accent = ACCENT[w.key] ?: cs.primary
+    Surface(shape = RoundedCornerShape(16.dp), color = cs.surface, border = BorderStroke(1.dp, accent.copy(alpha = .25f)), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.background(androidx.compose.ui.graphics.Brush.verticalGradient(0f to accent.copy(alpha = .10f), 1f to Color.Transparent, endY = 360f))
+            .padding(start = 14.dp, end = 10.dp, top = 10.dp, bottom = 12.dp)) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 36.dp).padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(28.dp).background(accent.copy(alpha = .16f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+                    Icon(w.icon, null, Modifier.size(16.dp), tint = accent)
+                }
+                Text(w.title, Modifier.padding(start = 10.dp).weight(1f), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 w.action?.let { (label, run) -> Text(label, Modifier.clickable(onClick = run).padding(horizontal = 6.dp, vertical = 4.dp), color = cs.primary, fontSize = 13.sp) }
             }
             w.content()
@@ -275,13 +455,17 @@ private fun NoteLine(n: NoteEntity, meta: String?, onClick: () -> Unit) {
 private fun RecentCard(n: NoteEntity, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Surface(onClick = onClick, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, cs.outlineVariant.copy(alpha = .7f)), color = cs.surface,
-        modifier = Modifier.size(144.dp, 112.dp)) {
-        Column(Modifier.padding(12.dp)) {
+        modifier = Modifier.size(144.dp, 118.dp)) {
+        // A Column, not loose children: Surface stretches each child to the full card height.
+        Column {
+        Box(Modifier.fillMaxWidth().height(6.dp).background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(tint(n.notebookId ?: n.id), tint((n.notebookId ?: n.id) + "x")))))
+        Column(Modifier.weight(1f).padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp)) {
             Text(n.icon ?: if (n.kind == "db") "▦" else "📄", fontSize = 22.sp)
             Text(n.title.ifBlank { "Untitled" }, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 6.dp))
             Spacer(Modifier.weight(1f))
             Text(relative(n.updatedAt), fontSize = 11.sp, color = cs.onSurfaceVariant)
+        }
         }
     }
 }
@@ -309,6 +493,14 @@ private fun ScratchPad(app: PliopadApp, all: List<NoteEntity>) {
     val cs = MaterialTheme.colorScheme
     BasicTextField(text, { text = it },
         textStyle = TextStyle(fontSize = 15.sp, lineHeight = 22.sp, color = cs.onSurface), cursorBrush = SolidColor(cs.primary),
-        modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(top = 2.dp, bottom = 4.dp, end = 4.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 88.dp).padding(top = 2.dp, bottom = 2.dp, end = 4.dp)
+            .background(Color(0xFFF5A524).copy(alpha = .06f), RoundedCornerShape(10.dp))
+            .border(1.dp, Color(0xFFF5A524).copy(alpha = .25f), RoundedCornerShape(10.dp))
+            .drawBehind {
+                val step = 22.sp.toPx()
+                var y = 6.dp.toPx() + step
+                while (y < size.height) { drawLine(Color(0xFFF5A524).copy(alpha = .22f), androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Offset(size.width, y), 1f); y += step }
+            }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         decorationBox = { inner -> Box { if (text.isEmpty()) Text("Jot something down…", color = cs.onSurfaceVariant.copy(alpha = .7f), fontSize = 15.sp); inner() } })
 }
