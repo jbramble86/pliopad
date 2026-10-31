@@ -58,6 +58,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material.icons.filled.ViewColumn
+import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.boundsInRoot
@@ -115,7 +118,7 @@ object Visits {
 
 /** Which widgets the person hid with Customize. */
 /** The Home layout: which sections show, in what order. Saved to the account (same on web, Windows and Android), cached here for offline. */
-data class HomeLayout(val order: List<String>, val hidden: Set<String>)
+data class HomeLayout(val order: List<String>, val hidden: Set<String>, val full: Set<String> = emptySet())
 
 object HomePrefs {
     val WIDGETS = listOf("actions" to "Quick actions", "recent" to "Jump back in", "scratch" to "Quick jot", "tasks" to "Tasks", "shortcuts" to "Pinned",
@@ -124,51 +127,70 @@ object HomePrefs {
     /** Full-width sections; the rest sit side by side in columns. */
     val WIDE = setOf("actions", "recent")
     val DEFAULT = HomeLayout(WIDGETS.map { it.first }, emptySet())
-    private fun prefs(ctx: Context) = ctx.getSharedPreferences("home", Context.MODE_PRIVATE)
+
+    /**
+     * Each screen size has its own layout in the account: "home" is shared by phones (and a foldable's cover screen), the web and
+     * Windows; "home_large" is the unfolded inner screen (and tablets), where each card can be half width (two side by side) or full width.
+     */
+    const val SHARED = "home"
+    const val LARGE = "home_large"
+
+    private fun prefs(ctx: Context, slot: String) = ctx.getSharedPreferences(if (slot == SHARED) "home" else slot, Context.MODE_PRIVATE)
     // Older builds called "Recently edited" "edited".
     private fun key(k: String) = if (k == "edited") "updated" else k
 
     /** Every known section once, unknown ones dropped, new ones appended. */
-    private fun normalize(order: List<String>, hidden: Collection<String>) =
-        HomeLayout((order.map(::key).filter { it in LABEL } + DEFAULT.order).distinct(), hidden.map(::key).filter { it in LABEL }.toSet())
+    private fun normalize(order: List<String>, hidden: Collection<String>, full: Collection<String> = emptyList()) =
+        HomeLayout((order.map(::key).filter { it in LABEL } + DEFAULT.order).distinct(), hidden.map(::key).filter { it in LABEL }.toSet(),
+            full.map(::key).filter { it in LABEL && it !in WIDE }.toSet())
 
-    fun layout(ctx: Context): HomeLayout {
-        val p = prefs(ctx)
-        return normalize(p.getString("order", null)?.split(',').orEmpty(), p.getStringSet("hidden", emptySet())!!)
+    fun layout(ctx: Context, slot: String = SHARED): HomeLayout {
+        val p = prefs(ctx, slot)
+        // The large screen starts from the shared layout until it is customised.
+        if (slot != SHARED && !p.contains("order")) return layout(ctx, SHARED).copy(full = emptySet())
+        return normalize(p.getString("order", null)?.split(',').orEmpty(), p.getStringSet("hidden", emptySet())!!, p.getStringSet("full", emptySet())!!)
     }
 
-    private fun cache(ctx: Context, l: HomeLayout, pending: Boolean) =
-        prefs(ctx).edit().putString("order", l.order.joinToString(",")).putStringSet("hidden", l.hidden).putBoolean("pending", pending).apply()
+    private fun cache(ctx: Context, slot: String, l: HomeLayout, pending: Boolean) =
+        prefs(ctx, slot).edit().putString("order", l.order.joinToString(",")).putStringSet("hidden", l.hidden).putStringSet("full", l.full)
+            .putBoolean("pending", pending).apply()
 
     /** A change made here that the account hasn't confirmed yet (offline, or still sending). */
-    fun pending(ctx: Context) = prefs(ctx).getBoolean("pending", false)
+    fun pending(ctx: Context, slot: String) = prefs(ctx, slot).getBoolean("pending", false)
+
+    private fun parse(o: kotlinx.serialization.json.JsonObject): HomeLayout {
+        fun list(name: String) = (o[name] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }.orEmpty()
+        return normalize(list("order"), list("hidden"), list("full"))
+    }
 
     /**
-     * The layout to show after reading the account: the account's, unless this phone has a change it hasn't sent yet;
-     * then this phone's wins (and is sent), so a slow or failed save never snaps Home back to an older layout.
+     * The layout to show after reading the account: the account's, unless this device has a change it hasn't sent yet;
+     * then this device's wins (and is sent), so a slow or failed save never snaps Home back to an older layout.
      */
-    suspend fun fromAccount(ctx: Context, api: app.pliopad.data.Api, accountPrefs: kotlinx.serialization.json.JsonObject?): HomeLayout {
-        if (pending(ctx)) return layout(ctx).also { save(ctx, api, it) }
-        val home = accountPrefs?.get("home") as? kotlinx.serialization.json.JsonObject ?: return layout(ctx)
-        fun list(name: String) = (home[name] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }.orEmpty()
-        return normalize(list("order"), list("hidden")).also { cache(ctx, it, pending = false) }
+    suspend fun fromAccount(ctx: Context, api: app.pliopad.data.Api, accountPrefs: kotlinx.serialization.json.JsonObject?, slot: String = SHARED): HomeLayout {
+        if (pending(ctx, slot)) return layout(ctx, slot).also { save(ctx, api, it, slot) }
+        (accountPrefs?.get(slot) as? kotlinx.serialization.json.JsonObject)?.let { return parse(it).also { l -> cache(ctx, slot, l, pending = false) } }
+        // Nothing saved for the large screen yet: follow the shared layout.
+        if (slot != SHARED) (accountPrefs?.get(SHARED) as? kotlinx.serialization.json.JsonObject)?.let { return parse(it).copy(full = emptySet()) }
+        return layout(ctx, slot)
     }
 
     // One save at a time, in order, so an older layout can never land after a newer one.
     private val saving = kotlinx.coroutines.sync.Mutex()
 
-    suspend fun save(ctx: Context, api: app.pliopad.data.Api, l: HomeLayout) {
-        cache(ctx, l, pending = true)
+    suspend fun save(ctx: Context, api: app.pliopad.data.Api, l: HomeLayout, slot: String = SHARED) {
+        cache(ctx, slot, l, pending = true)
         saving.withLock {
-            if (layout(ctx) != l) return // a newer change is queued behind this one; it will be sent instead
+            if (layout(ctx, slot) != l) return // a newer change is queued behind this one; it will be sent instead
             runCatching {
                 api.savePrefs(kotlinx.serialization.json.buildJsonObject {
-                    put("home", kotlinx.serialization.json.buildJsonObject {
+                    put(slot, kotlinx.serialization.json.buildJsonObject {
                         put("order", kotlinx.serialization.json.JsonArray(l.order.map { kotlinx.serialization.json.JsonPrimitive(it) }))
                         put("hidden", kotlinx.serialization.json.JsonArray(l.hidden.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+                        if (slot != SHARED) put("full", kotlinx.serialization.json.JsonArray(l.full.map { kotlinx.serialization.json.JsonPrimitive(it) }))
                     })
                 })
-            }.onSuccess { if (layout(ctx) == l) prefs(ctx).edit().putBoolean("pending", false).apply() }
+            }.onSuccess { if (layout(ctx, slot) == l) prefs(ctx, slot).edit().putBoolean("pending", false).apply() }
         }
     }
 }
@@ -190,7 +212,7 @@ private class HomeDrag {
  * an eye to hide or show it, and a dimmed look when hidden. Taps inside the card are blocked so dragging never opens anything.
  */
 @Composable
-private fun EditableSection(k: String, drag: HomeDrag, layout: HomeLayout, onLayout: (HomeLayout) -> Unit, content: @Composable () -> Unit) {
+private fun EditableSection(k: String, drag: HomeDrag, layout: HomeLayout, onLayout: (HomeLayout) -> Unit, large: Boolean, content: @Composable () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val hidden = k in layout.hidden
     val current by androidx.compose.runtime.rememberUpdatedState(layout)
@@ -237,6 +259,13 @@ private fun EditableSection(k: String, drag: HomeDrag, layout: HomeLayout, onLay
                 Text(HomePrefs.LABEL[k] ?: k, Modifier.padding(start = 4.dp), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.weight(1f))
+            if (large && k !in HomePrefs.WIDE) {
+                val full = k in layout.full
+                TextButton(onClick = { save(current.copy(full = if (full) current.full - k else current.full + k)) }, contentPadding = PaddingValues(horizontal = 10.dp)) {
+                    Icon(if (full) Icons.Default.ViewAgenda else Icons.Default.ViewColumn, null, Modifier.size(16.dp))
+                    Text(if (full) "Full width" else "Half width", Modifier.padding(start = 6.dp), fontSize = 12.sp)
+                }
+            }
             IconButton(onClick = { save(current.copy(hidden = if (hidden) current.hidden - k else current.hidden + k)) }, modifier = Modifier.size(32.dp)) {
                 Icon(if (hidden) Icons.Default.VisibilityOff else Icons.Default.Visibility, if (hidden) "Show on Home" else "Hide from Home", Modifier.size(18.dp), tint = cs.onSurfaceVariant)
             }
@@ -359,6 +388,8 @@ private fun ReminderLine(n: NoteEntity, onClick: () -> Unit) {
 fun HomeDashboard(
     app: PliopadApp, s: SessionData, onOpen: (String) -> Unit, onList: (String, String) -> Unit, onCreate: () -> Unit,
     quickActions: List<Pair<String, () -> Unit>>, layout: HomeLayout, editing: Boolean, onEdit: () -> Unit, onLayout: (HomeLayout) -> Unit,
+    /** The unfolded inner screen (or a tablet): its own layout, with a column choice. */
+    large: Boolean = false,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -429,7 +460,8 @@ fun HomeDashboard(
     // Sized from the pane it sits in (it can be a narrow left pane on an unfolded screen), not from the whole screen.
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val roomy = maxWidth >= 600.dp
-        val columns = when { maxWidth >= 1050.dp -> 3; maxWidth >= 600.dp -> 2; else -> 1 }
+        // The large screen: half-width cards sit two side by side. Elsewhere, columns follow the width.
+        val columns = if (large) 2 else when { maxWidth >= 1050.dp -> 3; maxWidth >= 600.dp -> 2; else -> 1 }
         val scroll = rememberScrollState()
         val drag = remember { HomeDrag() }
         // While a card is dragged near the top or bottom edge, keep scrolling so it can reach the whole page.
@@ -454,20 +486,22 @@ fun HomeDashboard(
                 }
                 if (editing) Surface(shape = RoundedCornerShape(12.dp), color = cs.primaryContainer.copy(alpha = .6f), modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) {
                     Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Drag cards by their handle to move them; use the eye to hide or show them. Saved to your account, so every device matches.",
+                        Text(if (large) "Drag cards by their handle to move them, make them half or full width, and use the eye to hide or show them. This is the unfolded screen's own layout, saved to your account."
+                            else "Drag cards by their handle to move them; use the eye to hide or show them. Saved to your account, so the web and Windows match.",
                             Modifier.weight(1f), fontSize = 12.sp, lineHeight = 16.sp)
                         TextButton(onClick = { onLayout(HomePrefs.DEFAULT) }) { Text("Reset") }
                         androidx.compose.material3.Button(onClick = onEdit) { Text("Done") }
                     }
                 }
                 // Each section, editable while editing.
-                @Composable fun Section(k: String, content: @Composable () -> Unit) = if (editing) EditableSection(k, drag, layout, onLayout, content) else content()
+                @Composable fun Section(k: String, content: @Composable () -> Unit) = if (editing) EditableSection(k, drag, layout, onLayout, large, content) else content()
+                fun ownRow(k: String) = k in HomePrefs.WIDE || (large && k in layout.full)
                 // Sections in the saved order: wide ones on their own, runs of the others as cards in 1–3 columns.
                 // While editing, hidden ones stay in place (dimmed) so they can be shown again.
                 val groups = mutableListOf<List<String>>()
                 for (k in layout.order.filter { editing || it !in layout.hidden }) {
                     val last = groups.lastOrNull()
-                    if (last == null || k in HomePrefs.WIDE || last.first() in HomePrefs.WIDE) groups += listOf(k) else groups[groups.lastIndex] = last + k
+                    if (last == null || ownRow(k) || ownRow(last.first())) groups += listOf(k) else groups[groups.lastIndex] = last + k
                 }
                 groups.forEach { group ->
                     when (group.first()) {

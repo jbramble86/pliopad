@@ -202,9 +202,12 @@ fun HomeScreen(
     var sortMenu by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<HomeDialog?>(null) }
     var customizing by remember { mutableStateOf(false) }
-    var homeLayout by remember { mutableStateOf(HomePrefs.layout(ctx)) }
+    // The unfolded inner screen (and tablets) has its own Home layout; the cover screen shares one with the web and Windows.
+    val largeHome = layout.widthDp >= 600
+    val homeSlot = if (largeHome) HomePrefs.LARGE else HomePrefs.SHARED
+    var homeLayout by remember(homeSlot) { mutableStateOf(HomePrefs.layout(ctx, homeSlot)) }
     // The layout follows the account: refresh it whenever Home opens (the cached copy shows first and works offline).
-    LaunchedEffect(type == "home") { if (type == "home") runCatching { app.api.me() }.onSuccess { homeLayout = HomePrefs.fromAccount(ctx, app.api, it.user.prefs) } }
+    LaunchedEffect(type == "home", homeSlot) { if (type == "home") runCatching { app.api.me() }.onSuccess { homeLayout = HomePrefs.fromAccount(ctx, app.api, it.user.prefs, homeSlot) } }
     val closedStacks = remember { mutableStateOf(setOf<String>()) }
     // Three panes need room: at fold sizes the sidebar tucks into the drawer while a note is open; from 1100dp it always stays.
     val permanent = layout.widthDp >= 1100 || (layout.permanentSidebar && selected.value == null)
@@ -384,11 +387,11 @@ fun HomeScreen(
                     onEdit = {
                         if (customizing) customizing = false
                         else scope.launch {
-                            runCatching { app.api.me() }.onSuccess { homeLayout = HomePrefs.fromAccount(ctx, app.api, it.user.prefs) }
+                            runCatching { app.api.me() }.onSuccess { homeLayout = HomePrefs.fromAccount(ctx, app.api, it.user.prefs, homeSlot) }
                             customizing = true
                         }
                     },
-                    onLayout = { l -> homeLayout = l; scope.launch { HomePrefs.save(ctx, app.api, l) } })
+                    onLayout = { l -> homeLayout = l; scope.launch { HomePrefs.save(ctx, app.api, l, homeSlot) } }, large = largeHome)
                 else if (notes.isEmpty()) {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Spacer(Modifier.height(80.dp))
