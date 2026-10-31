@@ -58,6 +58,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import app.pliopad.work.Updates
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material.icons.filled.ViewAgenda
@@ -496,6 +498,21 @@ fun HomeDashboard(
                 // Each section, editable while editing.
                 @Composable fun Section(k: String, content: @Composable () -> Unit) = if (editing) EditableSection(k, drag, layout, onLayout, large, content) else content()
                 fun ownRow(k: String) = k in HomePrefs.WIDE || (large && k in layout.full)
+                // A newer version of the app is available.
+                val update by Updates.available.collectAsState()
+                update?.let { u ->
+                    Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFF101D59), contentColor = Color.White, modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) {
+                        Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("PlioPad ${u.version} is available", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text("Install it over this one; your notes stay on the phone.", fontSize = 12.sp, color = Color(0xFFC9CFEA))
+                            }
+                            androidx.compose.material3.Button(onClick = { Updates.download(ctx, u) },
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFF647BFF))) { Text("Update") }
+                            IconButton(onClick = { Updates.dismiss(ctx) }) { Icon(Icons.Default.Close, "Not now", tint = Color(0xFFC9CFEA)) }
+                        }
+                    }
+                }
                 // Sections in the saved order: wide ones on their own, runs of the others as cards in 1–3 columns.
                 // While editing, hidden ones stay in place (dimmed) so they can be shown again.
                 val groups = mutableListOf<List<String>>()

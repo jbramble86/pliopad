@@ -68,6 +68,15 @@ class ApiException(val status: Int, message: String, val code: String? = null) :
 @Serializable data class AskResult(val answer: String, val sources: List<AskSource> = emptyList())
 @Serializable data class Member(val id: Long, val name: String, val email: String = "", val role: String = "member", val color: String? = null)
 @Serializable data class MembersResult(val members: List<Member> = emptyList())
+// Help center
+@Serializable data class HelpCategory(val id: String, val name: String, val icon: String = "")
+@Serializable data class HelpArticle(val id: String, val category: String, val title: String, val body: String)
+@Serializable data class HelpData(val categories: List<HelpCategory> = emptyList(), val articles: List<HelpArticle> = emptyList())
+@Serializable data class SupportFile(val id: String, val name: String, val mime: String = "", val size: Long = 0, val url: String = "")
+@Serializable data class TicketMessage(val id: Long, val staff: Boolean = false, val author: String? = null, val body: String, val created_at: Long,
+    val files: List<SupportFile> = emptyList())
+@Serializable data class Ticket(val id: Long, val subject: String, val status: String, val created_at: Long, val updated_at: Long,
+    val unread: Boolean = false, val rating: String? = null, val messages: List<TicketMessage> = emptyList())
 @Serializable data class AiResult(val markdown: String? = null, val blocks: List<Block> = emptyList(), val tags: List<String> = emptyList())
 
 /** Thin client for the Pliopad REST API. */
@@ -119,6 +128,32 @@ class Api(private val server: () -> String, private val token: () -> String?) {
 
     /** Merges these into the account's preferences (e.g. the Home layout), shared by every device. */
     suspend fun savePrefs(prefs: JsonObject) { call("PATCH", "/me", buildJsonObject { put("prefs", prefs) }) }
+
+    // ---- Help center and support requests ----
+    suspend fun help(): HelpData = json.decodeFromString(HelpData.serializer(), call("GET", "/help", auth = null))
+    suspend fun tickets(): List<Ticket> = json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(Ticket.serializer()), call("GET", "/support/tickets"))
+    suspend fun ticket(id: Long): Ticket = json.decodeFromString(Ticket.serializer(), call("GET", "/support/tickets/$id"))
+    suspend fun openTicket(subject: String, body: String, category: String, ws: Long?, version: String, files: List<String> = emptyList()): Ticket =
+        json.decodeFromString(Ticket.serializer(), call("POST", "/support/tickets", buildJsonObject {
+            put("subject", subject); put("body", body); put("category", category); put("platform", "Android"); put("app_version", version); ws?.let { put("workspace_id", it) }
+            put("files", JsonArray(files.map { JsonPrimitive(it) }))
+        }))
+    suspend fun replyTicket(id: Long, body: String, files: List<String> = emptyList()): Ticket = json.decodeFromString(Ticket.serializer(),
+        call("POST", "/support/tickets/$id/messages", buildJsonObject { put("body", body); put("files", JsonArray(files.map { JsonPrimitive(it) })) }))
+    suspend fun rateTicket(id: Long, rating: String): Ticket = json.decodeFromString(Ticket.serializer(), call("POST", "/support/tickets/$id/rate", buildJsonObject { put("rating", rating) }))
+
+    /** Uploads a screenshot or file for a support request (up to 10 MB). */
+    suspend fun uploadSupportFile(name: String, mime: String, bytes: ByteArray): SupportFile = withContext(Dispatchers.IO) {
+        val form = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("file", name, bytes.toRequestBody(mime.toMediaType())).build()
+        val req = Request.Builder().url(base() + "/api/support/files").post(form).header("Authorization", "Bearer ${token()}").build()
+        http.newCall(req).execute().use { res ->
+            val text = res.body?.string().orEmpty()
+            if (!res.isSuccessful) throw ApiException(res.code, if (res.code == 413) "Attachments can be up to 10 MB." else "Upload failed (${res.code})")
+            json.decodeFromString(SupportFile.serializer(), text)
+        }
+    }
+    suspend fun closeTicket(id: Long): Ticket = json.decodeFromString(Ticket.serializer(), call("POST", "/support/tickets/$id/close"))
 
     // ---- Online-only features (comments, history, publishing, server search, Ask AI) ----
 

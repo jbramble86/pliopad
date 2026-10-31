@@ -91,6 +91,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
+import dev.chrisbanes.haze.hazeSource
+import app.pliopad.work.Updates
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -272,11 +274,13 @@ private fun MainNav(activity: MainActivity, app: PliopadApp, s: SessionData) {
     val pill = remember { PillState() }
     val route = entry?.destination?.route
     val listType = if (route == "list/{type}/{arg}") entry?.arguments?.getString("type") else null
-    LaunchedEffect(route, listType) { pill.scrolledAway = false }
     val goTop: (String) -> Unit = { r ->
         nav.navigate(r) { popUpTo(nav.graph.findStartDestination().id) { inclusive = r == "list/home/-" }; launchSingleTop = true }
     }
-    Box(Modifier.fillMaxSize().nestedScroll(pill.scroll)) {
+    // The content scrolls behind the bottom bar, which shows it frosted.
+    val haze = remember { dev.chrisbanes.haze.HazeState() }
+    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().hazeSource(haze)) {
     CompositionLocalProvider(LocalPill provides (if (twoPane) null else pill)) {
     // Short, simple transitions: the default cross-fade felt sluggish.
     NavHost(nav, startDestination = "list/home/-",
@@ -296,19 +300,24 @@ private fun MainNav(activity: MainActivity, app: PliopadApp, s: SessionData) {
         composable("tasks") { TasksScreen(app, s, nav) }
         composable("graph") { GraphScreen(app, s, nav) { id -> nav.navigate("note/$id") } }
         composable("settings") { SettingsScreen(app, s, activity) { nav.popBackStack() } }
+        composable("help") { HelpScreen(app, s.wsId) { nav.popBackStack() } }
+    }
     }
     }
     PillNav(
-        visible = !twoPane && (route == "list/{type}/{arg}" || route == "tasks") && !pill.scrolledAway && !pill.drawerOpen,
-        current = when { route == "tasks" -> PillTab.Tasks; listType == "home" -> PillTab.Home; listType != null -> PillTab.Notes; else -> PillTab.None },
+        visible = !twoPane && (route == "list/{type}/{arg}" || route == "tasks" || route == "search") && !pill.drawerOpen,
+        current = when { route == "tasks" -> PillTab.Tasks; route == "search" -> PillTab.Search; listType == "home" -> PillTab.Home; listType != null -> PillTab.Notes; else -> PillTab.None },
         onHome = { goTop("list/home/-") },
         onNotes = { goTop("list/all/-") },
         onNew = { pill.onNew?.invoke() ?: scope.launch { openNote(app.repo.createNote()) } },
         onNewMenu = pill.onNewMenu,
         onTasks = { goTop("tasks") },
-        onSearch = { nav.navigate("search") },
+        onSearch = { if (route != "search") nav.navigate("search") },
+        haze = haze,
         modifier = Modifier.align(Alignment.BottomCenter),
     )
+    // Look for a newer version of the app each time it starts (the background sync checks every few hours too).
+    LaunchedEffect(Unit) { Updates.check(app, force = true) }
     val maintenance by Maintenance.notice.collectAsState()
     maintenance?.let { MaintenanceBanner(it, Modifier.align(Alignment.TopCenter)) }
     }

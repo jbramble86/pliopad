@@ -37,6 +37,7 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
     override suspend fun doWork(): Result {
         val app = applicationContext as PliopadApp
         val s = app.session.current()
+        Updates.check(applicationContext)
         if (!s.signedIn) return Result.success()
         return try {
             for (ws in s.workspaces) if (ws.id == s.wsId || s.workspaces.size == 1) app.sync.run(ws.id)

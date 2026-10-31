@@ -3,6 +3,7 @@ import { db } from './db.js';
 import { hardDelete } from './notes.js';
 import { limit } from './plans.js';
 import { nowMs, sendMail, setSetting, setting, config } from './util.js';
+import { supportUpkeep } from './routes/support.js';
 
 const DAY = 86400000;
 let running = false;
@@ -23,6 +24,7 @@ async function remindersDue() {
 }
 
 async function daily() {
+  await supportUpkeep();
   // Trash older than 30 days is deleted for good.
   for (const ws of await db.all('SELECT * FROM workspaces')) {
     for (const r of await db.all('SELECT id FROM notes WHERE workspace_id=? AND trashed_at IS NOT NULL AND trashed_at < ? AND deleted=0', [ws.id, nowMs() - 30 * DAY])) {

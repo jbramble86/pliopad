@@ -23,6 +23,7 @@ public sealed partial class MainWindow : Window
     private Repo R => App.Repo;
     private readonly Grid _root = new();
     private readonly Grid _body = new();
+    private readonly Border _updateBar = new() { Visibility = Visibility.Collapsed };
     private readonly ScrollViewer _sidebarScroll = new() { HorizontalScrollMode = ScrollMode.Disabled };
     private readonly Border _sidebar = new();
     private readonly Grid _listPane = new();
@@ -55,11 +56,14 @@ public sealed partial class MainWindow : Window
         Content = _root;
         _root.Background = B("PBg");
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // update banner
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         BuildTitleBar();
-        Grid.SetRow(_body, 1);
+        Grid.SetRow(_updateBar, 1);
+        _root.Children.Add(_updateBar);
+        Grid.SetRow(_body, 2);
         _root.Children.Add(_body);
-        Grid.SetRowSpan(_overlay, 2);
+        Grid.SetRowSpan(_overlay, 3);
         _root.Children.Add(_overlay);
 
         _body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(252) });
@@ -149,11 +153,75 @@ public sealed partial class MainWindow : Window
         _ = R.SyncNow();
         _syncTimer.Start();
         _reminders ??= new Reminders(this);
+        StartUpdateChecks();
         QuickCapture.Register(this);
         // PlioPad always opens on Home.
         Navigate(new Route("home"), null, remember: false);
         if (AutoTest.Folder != null) _ = AutoTest.Run(this, _root);
     }
+
+    // ---- New versions: checked at start-up and every 6 hours; a banner, plus one Windows notification per version ----
+
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _updateTimer;
+    private static string ThisVersion => typeof(MainWindow).Assembly.GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "0";
+
+    private void StartUpdateChecks()
+    {
+        if (_updateTimer != null) return;
+        _updateTimer = DispatcherQueue.CreateTimer();
+        _updateTimer.Interval = TimeSpan.FromHours(6);
+        _updateTimer.Tick += (_, _) => _ = CheckForUpdate();
+        _updateTimer.Start();
+        _ = CheckForUpdate();
+    }
+
+    private async Task CheckForUpdate()
+    {
+        try
+        {
+            var win = (await R.Api.Downloads()).FirstOrDefault(a => a.Id == "windows" && a.Available);
+            if (win?.Version is not { } version || win.Url is null || !AppBuild.Newer(version, ThisVersion)) { _updateBar.Visibility = Visibility.Collapsed; return; }
+            var url = R.Api.Absolute(win.Url);
+            if (R.Pref("update.dismissed") != version) ShowUpdateBar(version, url);
+            if (R.Pref("update.notified") != version)
+            {
+                R.SetPref("update.notified", version);
+                try
+                {
+                    Microsoft.Windows.AppNotifications.AppNotificationManager.Default.Show(new Microsoft.Windows.AppNotifications.Builder.AppNotificationBuilder()
+                        .AddArgument("update", url)
+                        .AddText($"PlioPad {version} is available")
+                        .AddText("Download and run the installer. Your notes stay on this PC.")
+                        .AddButton(new Microsoft.Windows.AppNotifications.Builder.AppNotificationButton("Download").AddArgument("update", url))
+                        .BuildNotification());
+                }
+                catch { /* notifications unavailable: the banner still shows */ }
+            }
+        }
+        catch { /* offline: try again later */ }
+    }
+
+    private void ShowUpdateBar(string version, string url)
+    {
+        var download = new Button { Content = "Download update", Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+        download.Click += (_, _) => OpenUrl(url);
+        var close = IconButton("\uE711", () => { R.SetPref("update.dismissed", version); _updateBar.Visibility = Visibility.Collapsed; }, "Not now", 12);
+        var g = new Grid { ColumnSpacing = 12 };
+        g.ColumnDefinitions.Add(new ColumnDefinition());
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var text = H(10, new TextBlock { Text = $"PlioPad {version} is available", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White), VerticalAlignment = VerticalAlignment.Center },
+            new TextBlock { Text = $"You have {ThisVersion}. Run the installer to update; your notes stay on this PC.", Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 0xC9, 0xCF, 0xEA)), VerticalAlignment = VerticalAlignment.Center });
+        g.Children.Add(text);
+        Grid.SetColumn(download, 1); g.Children.Add(download);
+        Grid.SetColumn(close, 2); g.Children.Add(close);
+        _updateBar.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 0x10, 0x1D, 0x59));
+        _updateBar.Padding = new Thickness(16, 8, 10, 8);
+        _updateBar.Child = g;
+        _updateBar.Visibility = Visibility.Visible;
+    }
+
+    public static void OpenUrl(string url) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
 
     public void SignedOut()
     {
@@ -232,6 +300,7 @@ public sealed partial class MainWindow : Window
             "tasks" => new TasksView(this),
             "ask" => new AskView(this),
             "sphere" => new SphereView(this),
+            "help" => new HelpView(this),
             _ => EmptyPane(),
         };
     }

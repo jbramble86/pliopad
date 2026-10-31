@@ -67,6 +67,7 @@ import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.TableChart
@@ -321,6 +322,7 @@ fun HomeScreen(
             DrawerRow("Templates", { Icon(Icons.AutoMirrored.Filled.ViewQuilt, null) }, selected = type == "templates") { go("list/templates/-") }
             DrawerRow("Trash", { Icon(Icons.Default.Delete, null) }, selected = type == "trash") { go("list/trash/-") }
             DrawerRow("Settings", { Icon(Icons.Default.Settings, null) }) { go("settings") }
+            DrawerRow("Help & support", { Icon(Icons.Default.SupportAgent, null) }) { go("help") }
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -612,7 +614,7 @@ fun SearchScreen(app: PliopadApp, s: SessionData, nav: NavHostController) {
         TopAppBar(navigationIcon = { IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
             title = { OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth().padding(end = 8.dp), placeholder = { Text("Search notes, scans, tag:work, is:todo…") }, singleLine = true) })
     }) { pad ->
-        LazyColumn(Modifier.padding(pad)) {
+        LazyColumn(Modifier.padding(pad), contentPadding = PaddingValues(bottom = if (LocalPill.current != null) PillClearance else 24.dp)) {
             items(local, key = { it.id }) { n ->
                 Column(Modifier.fillMaxWidth().clickable { nav.navigate("note/${n.id}") }.padding(16.dp)) {
                     Text(n.title.ifBlank { "Untitled" }, fontWeight = FontWeight.SemiBold)

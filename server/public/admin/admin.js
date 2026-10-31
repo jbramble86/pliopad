@@ -1,4 +1,4 @@
-// Platform admin console: overview, tenants, users, audit log, plans, settings and system health. Super admins only.
+// Platform admin console: overview, tenants, users, support, audit log, plans, settings and system health. Super admins only.
 import { h, icon, toast, confirmBox, promptBox, relTime, fmtDate, debounce, store } from '/app/js/ui.js';
 import { state, api, download } from '/app/js/api.js';
 
@@ -7,10 +7,12 @@ const theme = store.get('theme', 'system');
 if (theme !== 'system') document.documentElement.dataset.theme = theme;
 
 const NAV = [
-  ['overview', 'Overview', 'home'], ['tenants', 'Workspaces', 'book'], ['users', 'Users', 'users'], ['audit', 'Audit log', 'history'],
+  ['overview', 'Overview', 'home'], ['tenants', 'Workspaces', 'book'], ['users', 'Users', 'users'], ['support', 'Support', 'chat'], ['audit', 'Audit log', 'history'],
   [null, 'Configuration'], ['plans', 'Plans & billing', 'card'], ['settings', 'Settings', 'gear'], ['system', 'System health', 'shield'], ['maintenance', 'Maintenance', 'gear'],
 ];
 let shell = null;
+/** Support requests waiting for an answer, shown beside Support in the menu. */
+let openTickets = 0;
 
 const num = (n) => Number(n || 0).toLocaleString();
 const mb = (bytes) => (bytes > 1073741824 ? (bytes / 1073741824).toFixed(1) + ' GB' : (bytes / 1048576).toFixed(1) + ' MB');
@@ -26,6 +28,7 @@ async function boot() {
     return;
   }
   addEventListener('hashchange', route);
+  try { openTickets = (await api('GET', '/admin/tickets?status=open')).counts.open || 0; } catch { /* shown when Support opens */ }
   route();
 }
 
@@ -40,7 +43,8 @@ function layout(active) {
   }
   shell.nav.replaceChildren(
     h('div', { class: 'brand' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }), h('div', {}, state.me.app.name, h('small', {}, 'Admin console'))),
-    ...NAV.map(([k, label, ico]) => (k ? h('a', { href: '#/' + k, class: k === active ? 'active' : '', onclick: () => shell.el.classList.remove('nav-open') }, icon(ico), label) : h('div', { class: 'sec' }, label))),
+    ...NAV.map(([k, label, ico]) => (k ? h('a', { href: '#/' + k, class: k === active ? 'active' : '', onclick: () => shell.el.classList.remove('nav-open') }, icon(ico), label,
+      k === 'support' && openTickets ? h('span', { class: 'nav-count' }, openTickets) : null) : h('div', { class: 'sec' }, label))),
     h('div', { class: 'foot' }, h('a', { href: '/app/' }, icon('back'), 'Back to the app'), h('div', { style: { padding: '8px 10px 0' } }, state.me.user.email, ' · v', state.me.app.version)));
   return shell;
 }
@@ -55,7 +59,7 @@ async function route() {
   shell.body.replaceChildren(h('div', { class: 'empty' }, 'Loading…'));
   document.querySelector('.sheet')?.remove();
   try {
-    await ({ overview, tenants, users, audit, plans, settings, system, maintenance }[page] || overview)(arg);
+    await ({ overview, tenants, users, support, audit, plans, settings, system, maintenance }[page] || overview)(arg);
   } catch (e) {
     shell.body.replaceChildren(h('div', { class: 'card' }, e.message));
   }
@@ -188,6 +192,143 @@ function sheet(title, body, actions = []) {
     h('div', { class: 'sheet-body' }, body));
   document.body.append(s);
   return s;
+}
+
+// ---------- Support: requests from the Help center in every app ----------
+
+const TICKET_STATUS = { open: ['Waiting on us', 'warn'], on_hold: ['On hold', ''], answered: ['Waiting on customer', 'ok'], closed: ['Closed', ''] };
+const PRIORITY = { urgent: 'Urgent', high: 'High', normal: 'Normal', low: 'Low' };
+const prioBadge = (p) => h('span', { class: 'tk-prio ' + p }, PRIORITY[p] || p);
+const selectOf = (options, value, onchange) => h('select', { class: 'input sm', onchange: (e) => onchange(e.target.value) },
+  options.map(([v, l]) => h('option', { value: v, selected: String(v) === String(value ?? '') }, l)));
+
+async function support(id) {
+  header('Support', h('button', { class: 'btn', onclick: () => macrosSheet() }, 'Saved replies'));
+  const { attachPicker, messageFiles } = await import('/app/js/support-ui.js');
+  const staff = await api('GET', '/admin/support/staff');
+  const f = { view: store.get('tkView', 'open'), assignee: store.get('tkAssignee', ''), priority: '', q: '' };
+  let selected = new Set();
+  const list = h('div', { class: 'tk-list' });
+  const pane = h('div', { class: 'tk-pane' }, h('div', { class: 'empty' }, 'Pick a request to read and answer it.'));
+  const tabs = h('div', { class: 'tk-tabs' });
+  const bulk = h('div', { class: 'tk-bulk', hidden: true });
+  const load = async () => {
+    const qs = new URLSearchParams({ status: f.view === 'active' ? 'active' : f.view === 'all' ? '' : f.view, assignee: f.assignee, priority: f.priority, q: f.q });
+    const r = await api('GET', '/admin/tickets?' + qs);
+    openTickets = r.counts.open || 0;
+    layout('support');
+    tabs.replaceChildren(...[['open', 'Waiting on us'], ['on_hold', 'On hold'], ['answered', 'Waiting on customer'], ['closed', 'Closed'], ['all', 'All']].map(([k, l]) =>
+      h('button', { class: 'tk-tab' + (f.view === k ? ' on' : ''), onclick: () => { f.view = k; store.set('tkView', k); selected.clear(); load(); } }, l,
+        k !== 'all' && r.counts[k] ? h('span', { class: 'tk-n' }, r.counts[k]) : null)));
+    selected = new Set([...selected].filter((x) => r.rows.some((t) => t.id === x)));
+    drawBulk();
+    list.replaceChildren(...(r.rows.length ? r.rows.map((t) => {
+      const box = h('input', { type: 'checkbox', checked: selected.has(t.id), onclick: (e) => e.stopPropagation(),
+        onchange: (e) => { if (e.target.checked) selected.add(t.id); else selected.delete(t.id); drawBulk(); } });
+      return h('div', { class: 'tk-row' + (String(t.id) === String(id) ? ' active' : '') + (t.unread ? ' unread' : ''), onclick: () => { location.hash = '#/support/' + t.id; } },
+        box,
+        h('div', { class: 'grow', style: { minWidth: 0 } },
+          h('div', { class: 'row' }, t.unread ? h('span', { class: 'tk-dot', title: 'New message from the customer' }) : null,
+            h('b', { class: 'grow ellipsis' }, t.subject), h('span', { class: 'muted', style: { fontSize: '12px' } }, relTime(t.updated_at))),
+          h('div', { class: 'muted ellipsis', style: { fontSize: '12.5px' } }, `#${t.id} · ${t.user_name} · ${t.platform || 'Web'}${t.app_version ? ' ' + t.app_version : ''}`),
+          h('div', { class: 'row', style: { gap: '6px', marginTop: '4px' } }, prioBadge(t.priority), h('span', { class: 'status ' + TICKET_STATUS[t.status][1] }, TICKET_STATUS[t.status][0]),
+            h('span', { class: 'grow' }), h('span', { class: 'muted', style: { fontSize: '12px' } }, t.assignee_name || 'Unassigned'),
+            t.rating ? h('span', { title: 'Customer rating' }, t.rating === 'good' ? '👍' : '👎') : null)));
+    }) : [h('div', { class: 'empty' }, f.view === 'open' ? 'Nothing waiting. Nice.' : 'No requests here.')]));
+  };
+  const drawBulk = () => {
+    bulk.hidden = !selected.size;
+    const go = async (changes) => { try { await api('POST', '/admin/tickets/bulk', { ids: [...selected], ...changes }); selected.clear(); toast('Updated'); load(); } catch (e) { toast(e.message, { error: true }); } };
+    bulk.replaceChildren(h('b', {}, `${selected.size} selected`), h('span', { class: 'grow' }),
+      h('button', { class: 'btn sm', onclick: () => go({ assignee_id: state.me.user.id }) }, 'Assign to me'),
+      h('button', { class: 'btn sm', onclick: () => go({ status: 'on_hold' }) }, 'Hold'),
+      h('button', { class: 'btn sm', onclick: () => go({ status: 'closed' }) }, 'Close'));
+  };
+  const open = async (tid) => {
+    const t = await api('GET', '/admin/tickets/' + tid);
+    const update = async (changes) => { try { await api('PATCH', '/admin/tickets/' + tid, changes); await open(tid); load(); } catch (e) { toast(e.message, { error: true }); } };
+    // Composer: a reply to the customer, or an internal note only staff can see.
+    let mode = 'reply';
+    const box = h('textarea', { class: 'input', rows: 5 });
+    const files = attachPicker();
+    const macros = await api('GET', '/admin/support/macros');
+    const insert = selectOf([['', macros.length ? 'Insert a saved reply…' : 'No saved replies yet'], ...macros.map((m) => [m.id, m.title])], '', (v) => {
+      const m = macros.find((x) => x.id === v);
+      if (m) box.value = (box.value ? box.value.replace(/\s*$/, '\n\n') : '') + m.body.replaceAll('{name}', t.user.name.split(' ')[0]);
+      insert.value = '';
+      box.focus();
+    });
+    const send = async (status) => {
+      if (!box.value.trim()) return toast('Write something first.', { error: true });
+      if (files.busy()) return toast('Wait for the attachments to finish uploading.', { error: true });
+      try {
+        await api('POST', `/admin/tickets/${tid}/reply`, { body: box.value.trim(), status, note: mode === 'note', files: files.ids() });
+        toast(mode === 'note' ? 'Note added' : 'Reply sent'); await open(tid); load();
+      } catch (e) { toast(e.message, { error: true }); }
+    };
+    const actions = h('div', { class: 'row', style: { gap: '8px', marginTop: '8px', flexWrap: 'wrap' } });
+    const modeTabs = h('div', { class: 'tk-mode' });
+    const drawComposer = () => {
+      box.placeholder = mode === 'note' ? 'Internal note: only platform admins see this.' : `Reply to ${t.user.name}… Use {name} in saved replies for their first name.`;
+      composer.classList.toggle('note', mode === 'note');
+      modeTabs.replaceChildren(...[['reply', 'Reply to customer'], ['note', 'Internal note']].map(([k, l]) => h('button', { class: 'tk-tab' + (mode === k ? ' on' : ''), onclick: () => { mode = k; drawComposer(); } }, l)));
+      actions.replaceChildren(...(mode === 'note' ? [h('button', { class: 'btn primary', onclick: () => send() }, 'Add note'), files.button]
+        : [h('button', { class: 'btn primary', onclick: () => send('answered') }, 'Send reply'), h('button', { class: 'btn', onclick: () => send('closed') }, 'Send and close'),
+          h('button', { class: 'btn', onclick: () => send('on_hold') }, 'Send and hold'), files.button]), h('span', { class: 'grow' }), insert);
+    };
+    const composer = h('div', { class: 'tk-reply' }, modeTabs, box, files.chips, files.input, actions);
+    drawComposer();
+    pane.replaceChildren(
+      h('div', { class: 'tk-head' }, h('div', { class: 'grow' }, h('h2', {}, t.subject),
+        h('div', { class: 'muted' }, `#${t.id} · ${t.category || 'question'} · opened ${fmtDate(t.created_at)} · ${t.platform || 'Web'}${t.app_version ? ' ' + t.app_version : ''}`))),
+      h('div', { class: 'tk-controls' },
+        h('label', {}, 'Status', selectOf(Object.entries(TICKET_STATUS).map(([k, [l]]) => [k, l]), t.status, (v) => update({ status: v }))),
+        h('label', {}, 'Priority', selectOf(Object.entries(PRIORITY).map(([k, l]) => [k, l]), t.priority, (v) => update({ priority: v }))),
+        h('label', {}, 'Assignee', selectOf([['', 'Unassigned'], ...staff.map((u) => [u.id, u.id === state.me.user.id ? u.name + ' (me)' : u.name])], t.assignee_id,
+          (v) => update({ assignee_id: v ? Number(v) : null })))),
+      h('div', { class: 'tk-user card' }, h('b', {}, t.user.name), ' · ', h('a', { href: 'mailto:' + t.user.email }, t.user.email),
+        h('div', { class: 'muted', style: { fontSize: '12.5px', marginTop: '4px' } },
+          `Joined ${fmtDate(t.user.created_at)}${t.user.last_seen ? ' · last seen ' + relTime(t.user.last_seen) : ''} · ${t.workspaces.map((w) => `${w.name} (${w.plan}, ${w.role})`).join(', ') || 'no workspaces'}`),
+        t.history.length ? h('div', { style: { fontSize: '12.5px', marginTop: '6px' } }, 'Earlier requests: ',
+          ...t.history.flatMap((x, i) => [i ? ', ' : '', h('a', { href: '#/support/' + x.id }, `#${x.id} ${x.subject}`)])) : null,
+        h('div', { style: { marginTop: '6px' } }, h('a', { href: '#', onclick: (e) => { e.preventDefault(); userSheet(t.user.id); } }, 'Open user')),
+        t.rating ? h('div', { style: { marginTop: '6px' } }, `Rated ${t.rating === 'good' ? '👍 good' : '👎 bad'}${t.rating_comment ? ': “' + t.rating_comment + '”' : ''}`) : null),
+      h('div', { class: 'tk-thread' }, t.messages.map((m) => m.kind === 'event'
+        ? h('div', { class: 'tk-event' }, `${m.body}${m.author ? ' · ' + m.author : ''} · ${fmtDate(m.created_at)}`)
+        : h('div', { class: 'tk-msg' + (m.staff ? ' staff' : '') + (m.kind === 'note' ? ' note' : '') },
+          h('div', { class: 'tk-meta' }, h('b', {}, m.kind === 'note' ? `${m.author || 'Support'} · internal note` : m.staff ? `${m.author || 'Support'} (support)` : m.author || t.user.name), ' · ', fmtDate(m.created_at)),
+          h('div', { class: 'tk-body' }, m.body), messageFiles(m.files)))),
+      composer);
+  };
+  shell.body.replaceChildren(h('div', { class: 'tk' }, h('div', { class: 'tk-side' },
+    h('input', { class: 'input', placeholder: 'Search #id, subject, name, email or message…', oninput: debounce((e) => { f.q = e.target.value; load(); }, 250) }),
+    tabs,
+    h('div', { class: 'row', style: { gap: '6px' } },
+      selectOf([['', 'Anyone'], ['me', 'Assigned to me'], ['none', 'Unassigned']], f.assignee, (v) => { f.assignee = v; store.set('tkAssignee', v); load(); }),
+      selectOf([['', 'Any priority'], ...Object.entries(PRIORITY)], f.priority, (v) => { f.priority = v; load(); })),
+    bulk, list), pane));
+  // Open the request first, so the list shows it as read.
+  if (id) await open(id);
+  await load();
+}
+
+/** Saved replies: reusable answers for common questions. {name} becomes the customer's first name. */
+async function macrosSheet() {
+  let macros = await api('GET', '/admin/support/macros');
+  const body = h('div', {});
+  const draw = () => body.replaceChildren(
+    h('p', { class: 'sub' }, 'Reusable answers you can insert into a reply. {name} becomes the customer’s first name.'),
+    ...macros.map((m, i) => h('div', { class: 'card', style: { marginBottom: '10px' } },
+      h('input', { class: 'input', value: m.title, placeholder: 'Title', oninput: (e) => { m.title = e.target.value; } }),
+      h('textarea', { class: 'input', rows: 4, style: { marginTop: '6px' }, placeholder: 'Reply text', oninput: (e) => { m.body = e.target.value; } }, m.body),
+      h('button', { class: 'btn sm danger', style: { marginTop: '6px' }, onclick: () => { macros.splice(i, 1); draw(); } }, 'Delete'))),
+    h('div', { class: 'row', style: { gap: '8px' } },
+      h('button', { class: 'btn', onclick: () => { macros.push({ title: '', body: '' }); draw(); } }, 'Add a saved reply'),
+      h('button', { class: 'btn primary', onclick: async () => {
+        try { macros = await api('PUT', '/admin/support/macros', { macros }); toast('Saved replies updated'); draw(); } catch (e) { toast(e.message, { error: true }); }
+      } }, 'Save')));
+  draw();
+  sheet('Saved replies', body);
 }
 
 // ---------- Workspaces (tenants) ----------

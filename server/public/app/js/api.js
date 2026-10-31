@@ -73,6 +73,16 @@ export async function upload(file, noteId) {
   return data;
 }
 
+/** Uploads an attachment for a support request (images, logs, PDFs; up to 10 MB). */
+export async function uploadSupportFile(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch('/api/support/files', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, data.error || 'Upload failed');
+  return data;
+}
+
 /** Downloads an authenticated endpoint as a file. */
 export async function download(path, filename) {
   const res = await fetch('/api' + path, { headers: { Authorization: `Bearer ${state.token}` } });

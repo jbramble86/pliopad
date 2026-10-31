@@ -22,7 +22,7 @@ public sealed record MembersResult([property: JsonPropertyName("members")] List<
 public sealed record ShareResult([property: JsonPropertyName("share_slug")] string? Slug, [property: JsonPropertyName("share_url")] string? Url);
 
 /// <summary>Thin client for the Pliopad REST API (the same endpoints the web and Android apps use).</summary>
-public sealed class Api(Func<string> server, Func<string?> token)
+public sealed partial class Api(Func<string> server, Func<string?> token)
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(120) };
     /// <summary>Receives details of responses that did not come from the Pliopad server itself.</summary>

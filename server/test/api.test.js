@@ -284,3 +284,62 @@ test('downloads show the version from each build file name', async () => {
   assert.equal(by.windows.version, '1.3.1');
   assert.equal(by.mac.available, false);
 });
+
+test('help center: articles, tickets, attachments, notes, assignment, ratings and saved replies', async () => {
+  const help = await api('GET', '/api/help');
+  assert.ok(help.data.articles.length >= 10 && help.data.categories.length >= 4, 'articles are served');
+  // A screenshot uploaded first, then attached to the new request.
+  const fd = new FormData();
+  fd.append('file', new Blob([Buffer.from('fake png')], { type: 'image/png' }), 'screen.png');
+  const up = await (await fetch(`${BASE}/api/support/files`, { method: 'POST', headers: { Authorization: 'Bearer ' + member }, body: fd })).json();
+  assert.ok(up.id && up.url.includes('/api/support/files/'));
+  let r = await api('POST', '/api/support/tickets', { subject: 'Sync stuck', body: 'My phone shows changes waiting.', category: 'problem', platform: 'Android',
+    app_version: '1.6.3', workspace_id: ws, files: [up.id] }, member);
+  assert.equal(r.status, 200);
+  const id = r.data.id;
+  assert.equal(r.data.status, 'open');
+  assert.equal(r.data.priority, 'high', 'problems start as high priority');
+  assert.equal(r.data.messages[0].files[0].name, 'screen.png');
+  const img = await fetch(r.data.messages[0].files[0].url);
+  assert.equal(img.status, 200);
+  assert.equal(img.headers.get('content-type'), 'image/png');
+  assert.equal((await fetch(r.data.messages[0].files[0].url.replace(/\/[a-f0-9]+$/, '/bad'))).status, 404, 'links are signed');
+  assert.equal((await api('GET', `/api/support/tickets/${id}`, null, owner)).status, 404, 'other users cannot read it');
+  assert.equal((await api('GET', '/api/admin/tickets', null, member)).status, 403, 'the queue is for platform admins');
+
+  r = await api('GET', '/api/admin/tickets?status=open&assignee=none', null, owner);
+  const row = r.data.rows.find((t) => t.id === id);
+  assert.ok(row && row.unread && row.platform === 'Android');
+  r = await api('GET', '/api/admin/tickets?q=changes%20waiting', null, owner);
+  assert.ok(r.data.rows.some((t) => t.id === id), 'search finds message text');
+  // Internal note: staff only.
+  await api('POST', `/api/admin/tickets/${id}/reply`, { body: 'Probably the WAF again.', note: true }, owner);
+  // Reply: the replier becomes the assignee; the customer is notified.
+  await api('POST', `/api/admin/tickets/${id}/reply`, { body: 'Tap the cloud icon to see why.' }, owner);
+  r = await api('GET', `/api/admin/tickets/${id}`, null, owner);
+  assert.ok(r.data.assignee_id, 'assigned to whoever answered');
+  assert.deepEqual(r.data.messages.map((m) => m.kind), ['message', 'note', 'message']);
+  assert.equal((await api('GET', '/api/admin/tickets?assignee=me', null, owner)).data.rows.some((t) => t.id === id), true);
+  await api('PATCH', `/api/admin/tickets/${id}`, { priority: 'urgent' }, owner);
+  r = await api('GET', `/api/support/tickets/${id}`, null, member);
+  assert.equal(r.data.status, 'answered');
+  assert.deepEqual(r.data.messages.map((m) => m.kind), ['message', 'message'], 'customers never see notes or events');
+  assert.ok((await api('GET', '/api/me/notifications', null, member)).data.some((n) => n.kind === 'support'), 'the customer is notified');
+  r = await api('POST', `/api/support/tickets/${id}/messages`, { body: 'That fixed it, thanks.' }, member);
+  assert.equal(r.data.status, 'open');
+  r = await api('POST', `/api/support/tickets/${id}/close`, null, member);
+  assert.equal(r.data.status, 'closed');
+  r = await api('POST', `/api/support/tickets/${id}/rate`, { rating: 'good', comment: 'Quick!' }, member);
+  assert.equal(r.data.rating, 'good');
+  // Bulk: reopen and unassign.
+  await api('POST', '/api/admin/tickets/bulk', { ids: [id], status: 'on_hold', assignee_id: null }, owner);
+  r = await api('GET', `/api/admin/tickets/${id}`, null, owner);
+  assert.equal(r.data.status, 'on_hold');
+  assert.equal(r.data.assignee_id, null);
+  assert.ok(r.data.messages.some((m) => m.kind === 'event' && m.body.includes('On hold')), 'changes are logged in the thread');
+  // Saved replies.
+  r = await api('PUT', '/api/admin/support/macros', { macros: [{ title: 'Sync help', body: 'Tap the cloud icon.' }] }, owner);
+  assert.equal(r.data.length, 1);
+  assert.equal((await api('GET', '/api/admin/support/macros', null, owner)).data[0].title, 'Sync help');
+  assert.ok((await api('GET', '/api/admin/support/staff', null, owner)).data.length >= 1);
+});

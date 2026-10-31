@@ -3,6 +3,7 @@ import { h, icon, toast, popMenu, modal, promptBox, confirmBox, debounce, relTim
 import { state, api, wsApi, setToken, startImpersonation, setUnauthorizedHandler, canWrite, isAdmin, noteMeta, notebook, tag } from './api.js';
 import { showNote, closeNote, currentNote } from './note.js';
 import { settingsPage, tasksPage, askPage, graphPage } from './pages.js';
+import { helpPage, refreshSupportUnread } from './help.js';
 import { homePage } from './home.js';
 
 const root = document.getElementById('app');
@@ -40,6 +41,7 @@ async function route() {
   if (!state.me) {
     try { state.me = await api('GET', '/me'); } catch (e) { if (e.status !== 401) loadFailed(e); return; }
   }
+  if (first === 'help') return go(`#/w/${store.get('ws') || state.me.workspaces[0]?.id}/help${parts[1] ? '/t/' + parts[1] : ''}`);
   if (first === 'billing') return go(`#/w/${store.get('ws') || state.me.workspaces[0]?.id}/settings/billing`);
   if (first !== 'w' || !parts[1]) {
     const last = store.get('ws');
@@ -60,12 +62,13 @@ async function route() {
       return loadFailed(e);
     }
     buildShell();
+    refreshSupportUnread().then((n) => { if (n) renderSidebar(); });
   }
   const rest = parts.slice(2);
   const ni = rest.indexOf('n');
   const noteId = ni >= 0 ? rest[ni + 1] : null;
   const listPart = ni >= 0 ? rest.slice(0, ni) : rest;
-  const pageTypes = ['home', 'tasks', 'ask', 'graph', 'settings'];
+  const pageTypes = ['home', 'tasks', 'ask', 'graph', 'settings', 'help'];
   const [type, arg] = listPart;
   lastHash = location.hash;
   if (!type && !noteId) return go(`#/w/${state.wsId}/home`);
@@ -80,6 +83,7 @@ async function route() {
     if (type === 'tasks') return tasksPage(main);
     if (type === 'ask') return askPage(main);
     if (type === 'graph') return graphPage(main);
+    if (type === 'help') return helpPage(main, arg, rest[2]);
     return settingsPage(main, arg || 'general');
   }
   // The note list always stays beside an open note: a note opened from Home or a link keeps the last list (or All notes).
@@ -128,10 +132,35 @@ function buildShell() {
       h('button', { class: 'btn sm', onclick: signOut }, 'End session'))
     : state.me.app.announcement && state.me.app.announcement !== 'null' ? h('div', { class: 'banner' }, '📣 ', state.me.app.announcement) : null;
   root.replaceChildren(...[banner, el].filter(Boolean));
-  if (banner) el.style.height = 'calc(100vh - 36px)';
+  root.classList.add('with-shell');
   shell = { el, side, list, main };
+  appBanner();
   listSpec = null;
   document.title = `${state.boot.workspace.name} · ${state.me.app.name}`;
+}
+
+/**
+ * Suggests the native app for the device the web app is opened on: the Android app on Android, the Windows app on Windows
+ * (offline notes, widgets or Quick capture). Dismissing it hides it for two weeks. No banner where there's no app yet (iPhone, Mac).
+ */
+const APP_PITCH = {
+  android: ['PlioPad for Android', 'Works offline, with widgets and one-tap capture.'],
+  windows: ['PlioPad for Windows', 'Works offline, with Quick capture from anywhere (Ctrl+Alt+N).'],
+};
+async function appBanner() {
+  const ua = navigator.userAgent;
+  const platform = /Android/i.test(ua) ? 'android' : /Windows/i.test(ua) ? 'windows' : null;
+  if (!platform || store.get('appBannerHiddenUntil', 0) > Date.now()) return;
+  let build;
+  try { build = (await (await fetch('/api/downloads')).json()).find((a) => a.id === platform && a.available); } catch { return; }
+  if (!build || root.querySelector('.app-banner')) return;
+  const [title, pitch] = APP_PITCH[platform];
+  const bar = h('div', { class: 'app-banner' },
+    h('span', { class: 'brand-mark', 'aria-hidden': 'true' }),
+    h('div', { class: 'grow' }, h('b', {}, title), h('div', {}, pitch)),
+    h('a', { class: 'btn primary sm', href: build.url, download: '' }, platform === 'windows' ? 'Download for Windows' : 'Get the app'),
+    h('button', { class: 'btn icon', 'aria-label': 'Not now', onclick: () => { store.set('appBannerHiddenUntil', Date.now() + 14 * 86400000); bar.remove(); } }, icon('x')));
+  root.prepend(bar);
 }
 
 function navItem({ ico, label, href, active, count, onclick, extra, drop, cls = '' }) {
@@ -241,6 +270,7 @@ function renderSidebar() {
     navItem({ ico: 'globe', label: 'Published', href: base + '/shared', active: is('/shared') }),
     navItem({ ico: 'trash', label: 'Trash', href: base + '/trash', active: is('/trash'), count: b.tree.filter((n) => n.trashed_at).length || null }),
     navItem({ ico: 'gear', label: 'Settings & members', href: base + '/settings/general', active: is('/settings') }),
+    navItem({ ico: 'chat', label: 'Help & support', href: base + '/help', active: is('/help'), count: state.supportUnread || null }),
     navItem({ ico: 'download', label: 'Get the apps', onclick: () => import('./apps.js').then((m) => m.appsDialog()) }));
   shell.side.replaceChildren(top, actions, scroll, foot);
 }

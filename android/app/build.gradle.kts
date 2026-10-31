@@ -16,8 +16,8 @@ android {
         applicationId = "app.pliopad"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "1.6.3"
+        versionCode = 18
+        versionName = "1.7.0"
         // The app always talks to pliopad.com; users never enter a server address.
         buildConfigField("String", "SERVER_URL", "\"https://pliopad.com\"")
     }
@@ -100,6 +100,7 @@ dependencies {
     implementation(libs.mlkit.docscanner)
     implementation(libs.biometric)
     implementation(libs.androidx.window)
+    implementation("dev.chrisbanes.haze:haze:1.6.4")
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.roborazzi)

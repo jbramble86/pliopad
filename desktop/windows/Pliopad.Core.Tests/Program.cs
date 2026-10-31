@@ -113,6 +113,15 @@ await Test("home layout: account order, old keys, new sections, grouping", async
     await Task.CompletedTask;
 });
 
+await Test("update check compares versions numerically", async () =>
+{
+    True(AppBuild.Newer("1.10.0", "1.9.3"), "1.10 > 1.9");
+    True(AppBuild.Newer("1.4.1", "1.4.0"), "patch");
+    True(!AppBuild.Newer("1.4.0", "1.4.0.0"), "same");
+    True(!AppBuild.Newer("1.3.9", "1.4.0"), "older");
+    await Task.CompletedTask;
+});
+
 await Test("store: local edits are dirty, notebooks and stacks", async () =>
 {
     var repo = new Repo(TempDir());

@@ -47,6 +47,14 @@ const TABLES = {
   throttle: '{ID}, k VARCHAR(190) NOT NULL, at BIGINT NOT NULL',
   notifications: `{ID}, user_id BIGINT NOT NULL, workspace_id BIGINT NULL, kind VARCHAR(40) NOT NULL, body {TEXT} NOT NULL,
     note_id VARCHAR(36) NULL, read_at BIGINT NULL, created_at BIGINT NOT NULL`,
+  tickets: `{ID}, user_id BIGINT NOT NULL, workspace_id BIGINT NULL, subject VARCHAR(200) NOT NULL, category VARCHAR(40) NULL,
+    status VARCHAR(20) NOT NULL, priority VARCHAR(10) NOT NULL DEFAULT 'normal', assignee_id BIGINT NULL, platform VARCHAR(40) NULL, app_version VARCHAR(40) NULL,
+    last_from VARCHAR(10) NOT NULL, user_read_at BIGINT NULL, staff_read_at BIGINT NULL, rating VARCHAR(10) NULL, rating_comment VARCHAR(1000) NULL,
+    created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL, closed_at BIGINT NULL`,
+  ticket_messages: `{ID}, ticket_id BIGINT NOT NULL, user_id BIGINT NULL, staff INT NOT NULL DEFAULT 0, kind VARCHAR(10) NOT NULL DEFAULT 'message',
+    body {TEXT} NOT NULL, created_at BIGINT NOT NULL`,
+  ticket_files: `id VARCHAR(36) PRIMARY KEY, ticket_id BIGINT NULL, message_id BIGINT NULL, user_id BIGINT NOT NULL, name VARCHAR(255) NOT NULL,
+    mime VARCHAR(120) NOT NULL, size BIGINT NOT NULL, path VARCHAR(255) NOT NULL, created_at BIGINT NOT NULL`,
 };
 
 const INDEXES = {
@@ -61,6 +69,9 @@ const INDEXES = {
   audit: ['workspace_id, created_at', 'created_at', 'user_id'],
   throttle: ['k, at'],
   notifications: ['user_id, created_at'],
+  tickets: ['user_id, updated_at', 'status, updated_at', 'assignee_id'],
+  ticket_messages: ['ticket_id'],
+  ticket_files: ['ticket_id', 'message_id'],
 };
 
 export async function migrate() {

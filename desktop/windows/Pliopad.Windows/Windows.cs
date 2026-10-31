@@ -191,6 +191,7 @@ public sealed class Reminders
 
     private void Invoked(IDictionary<string, string> args)
     {
+        if (args.TryGetValue("update", out var url)) { MainWindow.OpenUrl(url); return; }
         if (args.TryGetValue("done", out var doneId)) { App.Repo.ReminderDone(doneId); return; }
         if (args.TryGetValue("note", out var id))
         {

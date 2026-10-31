@@ -75,6 +75,7 @@ public sealed partial class MainWindow
         p.Children.Add(Row("", "Templates", () => Navigate(new Route("templates")), null, Route.Kind == "templates", glyph: true));
         var trash = R.Store.Trash(R.WsId).Count;
         p.Children.Add(Row("", "Trash", () => Navigate(new Route("trash")), trash > 0 ? trash.ToString() : null, Route.Kind == "trash", glyph: true));
+        p.Children.Add(Row("", "Help & support", () => Navigate(new Route("help")), null, Route.Kind == "help", glyph: true));
 
         var offset = _sidebarScroll.VerticalOffset;
         _sidebarScroll.Content = p;
