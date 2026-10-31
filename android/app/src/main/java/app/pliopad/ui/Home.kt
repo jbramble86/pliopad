@@ -296,7 +296,7 @@ fun HomeScreen(
             stackNames.forEach { stack ->
                 val isOpen = stack !in closedStacks.value
                 val members = notebooks.filter { it.stack == stack }
-                DrawerRow("$stack  (${members.size})", { Icon(if (isOpen) Icons.Default.FolderOpen else Icons.Default.Folder, null) },
+                DrawerRow(stack, { Icon(if (isOpen) Icons.Default.FolderOpen else Icons.Default.Folder, null) },
                     trailing = { IconButton(onClick = { dialog = HomeDialog.StackActions(stack) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.MoreVert, "Collection options", Modifier.size(18.dp)) } },
                     onLongClick = { dialog = HomeDialog.StackActions(stack) }) {
                     closedStacks.value = if (isOpen) closedStacks.value + stack else closedStacks.value - stack

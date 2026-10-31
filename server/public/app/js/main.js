@@ -197,10 +197,10 @@ function renderSidebar() {
     }
     return it;
   };
-  const stackRow = (stack, count) => {
+  const stackRow = (stack) => {
     const key = 'stack:' + stack;
     const isOpen = !closed.has(key);
-    const row = navItem({ ico: h('span', { class: 'twisty' + (isOpen ? ' open' : '') }, icon('chevron')), label: stack, onclick: () => toggleStack(key), count,
+    const row = navItem({ ico: h('span', { class: 'twisty' + (isOpen ? ' open' : '') }, icon('chevron')), label: stack, onclick: () => toggleStack(key),
       extra: canWrite() ? [rowBtn('plus', `New notebook in ${stack}`, () => newNotebook(stack)), rowBtn('more', 'Collection options', (a) => stackMenu(a, stack))] : null });
     if (canWrite()) {
       row.addEventListener('contextmenu', (e) => { e.preventDefault(); stackMenu(null, stack, e); });
@@ -212,7 +212,7 @@ function renderSidebar() {
   };
   for (const [stack, nbs] of Object.entries(stacks).sort(([a], [b2]) => a.localeCompare(b2))) {
     if (!stack) { nbs.forEach((nb) => nbSec.append(nbItem(nb))); continue; }
-    const [row, isOpen] = stackRow(stack, nbs.length);
+    const [row, isOpen] = stackRow(stack);
     nbSec.append(row);
     if (isOpen) nbs.forEach((nb) => { const it = nbItem(nb); it.style.paddingLeft = '22px'; nbSec.append(it); });
   }

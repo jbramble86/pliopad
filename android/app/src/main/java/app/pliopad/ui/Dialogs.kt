@@ -147,7 +147,7 @@ fun DrawerRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { leading() }
-        Text(label, Modifier.weight(1f), maxLines = 1, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        Text(label, Modifier.weight(1f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = if (selected) cs.onPrimaryContainer else cs.onSurface)
         trailing?.invoke()
     }

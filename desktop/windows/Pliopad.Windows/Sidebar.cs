@@ -47,8 +47,7 @@ public sealed partial class MainWindow
             {
                 var key = "stack:" + stack.Key;
                 var open = !_collapsed.Contains(key);
-                var total = stack.Sum(nb => count.GetValueOrDefault(nb.Id));
-                var row = Row(open ? "📚" : "📚", stack.Key, () => Navigate(new Route("stack", stack.Key)), total.ToString(), Route.Kind == "stack" && Route.Arg == stack.Key);
+                var row = Row(open ? "📚" : "📚", stack.Key, () => Navigate(new Route("stack", stack.Key)), null, Route.Kind == "stack" && Route.Arg == stack.Key);
                 row.ContextFlyout = StackMenu(stack.Key);
                 p.Children.Add(WithChevron(row, open, () => { Toggle(key); RenderSidebar(); }));
                 if (open)
