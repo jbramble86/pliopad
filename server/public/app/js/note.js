@@ -66,7 +66,7 @@ class NoteController {
     const v = await promptBox('Created on', { label: 'Date and time', value: local, type: 'datetime-local', ok: 'Save' });
     if (!v) return;
     const ms = new Date(v).getTime();
-    if (!ms || ms > Date.now()) return toast('Pick a date that isn't in the future.', { error: true });
+    if (!ms || ms > Date.now()) return toast('Pick a date that is not in the future.', { error: true });
     this.note.created_at = ms;
     this.queue({ created_at: ms });
     await this.flush();
