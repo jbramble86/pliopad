@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.VerticalDivider
@@ -411,7 +412,7 @@ fun HomeScreen(
         ) {
             if (permanent) {
                 Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.width(layout.sidebarWidth).fillMaxHeight()) {
-                    Box(Modifier.statusBarsPadding()) { sidebar() }
+                    Box(Modifier.statusBarsPadding().navigationBarsPadding()) { sidebar() }
                 }
                 VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
