@@ -97,8 +97,8 @@ public sealed class HomeView : ScrollPage, IRefreshable
             ["shortcuts"] = () => Widget("shortcuts", "Pinned", "\uE735", PinTiles(notes.Where(n => n.Pinned).Take(6).ToList())),
             ["reminders"] = () => Widget("reminders", "Reminders", "\uEA8F", Reminders(notes.Where(n => n.ReminderAt != null && !n.ReminderDone).OrderBy(n => n.ReminderAt).Take(5).ToList())),
             ["notebooks"] = () => Widget("notebooks", "Notebooks", "\uE82D", Notebooks(notes)),
-            ["updated"] = () => Widget("updated", "Recently edited", "\uE81C", V(0, Activity(notes),
-                NoteRows(notes.Take(5).ToList(), n => RelTime(n.UpdatedAt) + (R.Notebooks().FirstOrDefault(x => x.Id == n.NotebookId) is { } nb ? " · " + nb.Name : ""), "Nothing yet."))),
+            ["updated"] = () => Widget("updated", "Recently edited", "\uE81C", V(0,
+                NoteRows(notes.Take(6).ToList(), n => RelTime(n.UpdatedAt) + (R.Notebooks().FirstOrDefault(x => x.Id == n.NotebookId) is { } nb ? " · " + nb.Name : ""), "Nothing yet."))),
         };
 
         // Wide sections on their own; runs of the others side by side in columns.
@@ -395,27 +395,6 @@ public sealed class HomeView : ScrollPage, IRefreshable
             p.Children.Add(b);
         }
         return p;
-    }
-
-    /// <summary>Notes edited per day over the last two weeks, as small bars.</summary>
-    private static Grid Activity(List<Note> notes)
-    {
-        var start = new DateTimeOffset(DateTime.Today).ToUnixTimeMilliseconds();
-        const long day = 86_400_000;
-        var counts = new int[14];
-        foreach (var n in notes) { var d = (start + day - n.UpdatedAt) / day; if (n.UpdatedAt <= start + day && d is >= 0 and < 14) counts[13 - d]++; }
-        var max = Math.Max(1, counts.Max());
-        var blue = Rgb(0x3BA7FF);
-        var g = new Grid { Height = 40, ColumnSpacing = 4, Margin = new Thickness(0, 0, 0, 10) };
-        for (int i = 0; i < 14; i++)
-        {
-            g.ColumnDefinitions.Add(new ColumnDefinition());
-            var bar = new Border { Height = Math.Max(3, counts[i] / (double)max * 40), VerticalAlignment = VerticalAlignment.Bottom, CornerRadius = new CornerRadius(3, 3, 1, 1),
-                Background = Solid(i == 13 ? blue : Alpha(blue, .35)) };
-            ToolTipService.SetToolTip(bar, $"{counts[i]} edited");
-            Grid.SetColumn(bar, i); g.Children.Add(bar);
-        }
-        return g;
     }
 
     // ---- scratch pad: a real note, so it syncs to the phone and the web ----

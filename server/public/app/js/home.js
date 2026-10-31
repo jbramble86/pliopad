@@ -51,15 +51,7 @@ function section(key, title, iconName, body, action) {
 const TINTS = ['#647BFF', '#2FBF8A', '#FF7A70', '#F5A524', '#9B7BFF', '#3BA7FF', '#EC6FB0'];
 const tint = (id) => TINTS[[...String(id)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % TINTS.length];
 
-/** Notes edited per day over the last 14 days, as small bars. */
-function activity(notes) {
-  const day = 86400000, start = new Date(); start.setHours(0, 0, 0, 0);
-  const counts = Array(14).fill(0);
-  for (const n of notes) { const d = Math.floor((start.getTime() + day - n.updated_at) / day); if (d >= 0 && d < 14) counts[13 - d]++; }
-  const max = Math.max(1, ...counts);
-  return h('div', { class: 'hw-activity', title: 'Notes edited per day, last two weeks' },
-    counts.map((c, i) => h('span', { class: 'hw-bar' + (i === 13 ? ' today' : ''), style: { height: Math.max(6, (c / max) * 100) + '%' }, title: `${c} edited` })));
-}
+
 
 function row(n, meta, onclick) {
   return h('a', { class: 'hw-row', href: `#/w/${state.wsId}/n/${n.id}`, onclick },
@@ -173,7 +165,7 @@ export async function homePage(main) {
           h('div', { class: 'hw-meta' }, counts[nb.id] ? `${counts[nb.id]} note${counts[nb.id] === 1 ? '' : 's'} · ${relTime(lastEdit[nb.id])}` : 'Empty'),
           nb.stack ? h('div', { class: 'hw-nb-stack' }, nb.stack) : null)))
       : empty('No notebooks yet.')),
-    updated: section('updated', 'Recently edited', 'clock', h('div', {}, activity(notes), ...edited.slice(0, 5).map((n) => row(n, relTime(n.updated_at) + (notebook(n.notebook_id) ? ' · ' + notebook(n.notebook_id).name : ''))))),
+    updated: section('updated', 'Recently edited', 'clock', h('div', {}, ...edited.slice(0, 6).map((n) => row(n, relTime(n.updated_at) + (notebook(n.notebook_id) ? ' · ' + notebook(n.notebook_id).name : ''))))),
   };
 
   const quick = [

@@ -222,3 +222,23 @@ class HomeDragTest : ScreenShotsBase() {
         }
     }
 }
+
+/** Edit Home: swiping on a card (not its handle) still scrolls the page. */
+class HomeEditScrollTest : ScreenShotsBase() {
+    @Config(qualifiers = "w411dp-h891dp-xxhdpi")
+    @Test fun pageScrollsWhileEditing() {
+        val i = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
+        ActivityScenario.launch<MainActivity>(i).use {
+            repeat(3) { compose.waitForIdle(); Thread.sleep(250) }
+            compose.onNodeWithText("Edit").performClick()
+            compose.waitForIdle()
+            val before = compose.onNodeWithText("Done").fetchSemanticsNode().positionInRoot.y
+            // Swipe up on a card body (the "Quick jot" card title), not on a handle.
+            compose.onAllNodesWithText("Quick jot")[1].performTouchInput { down(center); repeat(20) { moveBy(androidx.compose.ui.geometry.Offset(0f, -30f)) }; up() }
+            compose.waitForIdle()
+            val after = compose.onNodeWithText("Done").fetchSemanticsNode().positionInRoot.y
+            org.junit.Assert.assertTrue("page did not scroll: $before -> $after", after < before - 200)
+        }
+    }
+
+}

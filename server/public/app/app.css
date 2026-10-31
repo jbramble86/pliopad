@@ -485,10 +485,6 @@ section.hw[data-w="recent"] .hw-badge { width: 22px; height: 22px; border-radius
 .hw-nb-ico { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; font-size: 17px; margin-bottom: 6px; background: color-mix(in srgb, var(--t) 18%, var(--bg)); }
 .hw-nb-name { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hw-nb-stack { margin-top: auto; padding-top: 4px; font-size: 11px; color: color-mix(in srgb, var(--t) 70%, var(--fg)); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Recently edited: two weeks of activity */
-.hw-activity { display: flex; align-items: flex-end; gap: 4px; height: 44px; margin: 2px 0 10px; padding: 0 2px; }
-.hw-bar { flex: 1; border-radius: 3px 3px 1px 1px; background: color-mix(in srgb, #3BA7FF 35%, var(--bg)); min-height: 3px; }
-.hw-bar.today { background: #3BA7FF; }
 /* Quick jot: lined paper */
 .hw[data-w="scratch"] .hw-scratch { background: repeating-linear-gradient(180deg, transparent 0 25px, color-mix(in srgb, #F5A524 22%, transparent) 25px 26px);
   line-height: 26px; border-radius: 10px; border: 1px solid color-mix(in srgb, #F5A524 25%, var(--line)); padding: 2px 10px; background-color: color-mix(in srgb, #F5A524 5%, var(--bg)); }

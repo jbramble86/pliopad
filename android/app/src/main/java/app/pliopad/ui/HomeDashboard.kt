@@ -229,8 +229,9 @@ private fun EditableSection(k: String, drag: HomeDrag, layout: HomeLayout, onLay
                 style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f))))
         }.padding(4.dp)) {
             Box(Modifier.graphicsLayer { alpha = if (hidden) .4f else 1f }) { content() }
-            // Blocks taps on the card's own buttons and links while editing.
-            Box(Modifier.matchParentSize().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } })
+            // Covers the card so its own buttons and links ignore touches while editing. It listens without consuming,
+            // so swipes still reach the page and it scrolls as usual.
+            Box(Modifier.matchParentSize().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } })
         }
     }
 }
@@ -285,21 +286,6 @@ private fun TaskSummary(tasks: List<Blocks.Task>, today: String) {
                 Text("$n", Modifier.padding(start = 5.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 Text(" $label", fontSize = 12.sp, color = cs.onSurfaceVariant)
             }
-        }
-    }
-}
-
-/** Notes edited per day over the last two weeks, as small bars. */
-@Composable
-private fun Activity(all: List<NoteEntity>) {
-    val start = remember { java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli() }
-    val day = 86_400_000L
-    val counts = IntArray(14).also { c -> all.forEach { n -> val d = ((start + day - n.updatedAt) / day).toInt(); if (n.updatedAt <= start + day && d in 0..13) c[13 - d]++ } }
-    val max = (counts.maxOrNull() ?: 0).coerceAtLeast(1)
-    val blue = ACCENT.getValue("updated")
-    Row(Modifier.fillMaxWidth().height(44.dp).padding(top = 2.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
-        counts.forEachIndexed { i, c ->
-            Box(Modifier.weight(1f).fillMaxHeight((c.toFloat() / max).coerceAtLeast(.08f)).background(if (i == 13) blue else blue.copy(alpha = .35f), RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)))
         }
     }
 }
@@ -419,8 +405,7 @@ fun HomeDashboard(
             }
         },
         Widget("updated", "Recently edited", Icons.Default.Schedule) {
-            Activity(all)
-            all.sortedByDescending { it.updatedAt }.take(5).forEach { n -> NoteLine(n, relative(n.updatedAt)) { onOpen(n.id) } }
+            all.sortedByDescending { it.updatedAt }.take(6).forEach { n -> NoteLine(n, relative(n.updatedAt)) { onOpen(n.id) } }
         },
     ).associateBy { it.key }
 
