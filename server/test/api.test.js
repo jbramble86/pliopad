@@ -28,7 +28,13 @@ async function api(method, url, body, token) {
 }
 
 before(async () => {
-  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ app_key: 'test', debug: true, db: { driver: 'sqlite', file: path.join(dir, 'db.sqlite') }, storage: path.join(dir, 'files') }));
+  // App builds: the version comes from the file name; the higher version wins even if an older build was uploaded later.
+  const dl = path.join(dir, 'downloads');
+  fs.mkdirSync(dl);
+  fs.writeFileSync(path.join(dl, 'PlioPad-1.6.1.apk'), 'new');
+  fs.writeFileSync(path.join(dl, 'PlioPad-1.5.0.apk'), 'old');
+  fs.writeFileSync(path.join(dl, 'PlioPad-Setup-1.3.1.exe'), 'win');
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ app_key: 'test', debug: true, db: { driver: 'sqlite', file: path.join(dir, 'db.sqlite') }, storage: path.join(dir, 'files'), downloads: dl }));
   proc = spawn(process.execPath, ['--no-warnings', 'src/server.js'], { cwd: ROOT, env: { ...process.env, PORT: String(PORT), PLIOPAD_CONFIG: path.join(dir, 'config.json') }, stdio: ['ignore', 'pipe', 'inherit'] });
   await new Promise((resolve) => proc.stdout.on('data', (d) => String(d).includes('listening') && resolve()));
 });
@@ -268,4 +274,13 @@ test('maintenance mode blocks everyone but platform admins; upkeep tasks run', a
   assert.equal(r.data.mode, null);
   r = await api('GET', `/api/w/${ws}/bootstrap`, null, member);
   assert.notEqual(r.status, 503);
+});
+
+test('downloads show the version from each build file name', async () => {
+  const apps = await (await fetch(`${BASE}/api/downloads`)).json();
+  const by = Object.fromEntries(apps.map((a) => [a.id, a]));
+  assert.equal(by.android.version, '1.6.1');
+  assert.equal(by.android.file, 'PlioPad-1.6.1.apk');
+  assert.equal(by.windows.version, '1.3.1');
+  assert.equal(by.mac.available, false);
 });

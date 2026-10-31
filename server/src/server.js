@@ -46,17 +46,25 @@ export function downloadsDir() {
   return DOWNLOAD_DIRS.find((d) => listFiles(d).some((f) => APPS.some((a) => a.match.some((re) => re.test(f))))) || DOWNLOAD_DIRS[0];
 }
 
-/** Each app's newest build in the downloads folder (or null). */
+/** The version in a build's file name, e.g. PlioPad-Setup-1.3.1.exe → "1.3.1". */
+export const fileVersion = (f) => f.match(/(\d+\.\d+(?:\.\d+)?)(?=[^\d]*$)/)?.[1] || null;
+const byVersion = (p, q) => {
+  const a = (fileVersion(p.f) || '0').split('.').map(Number), b = (fileVersion(q.f) || '0').split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((b[i] || 0) !== (a[i] || 0)) return (b[i] || 0) - (a[i] || 0);
+  return q.s.mtimeMs - p.s.mtimeMs;
+};
+
+/** Each app's latest build in the downloads folder (or null): the highest version in its file name, else the newest file. */
 export function appBuilds() {
   const dir = downloadsDir();
   const files = listFiles(dir).map((f) => ({ f, s: fs.statSync(path.join(dir, f)) }));
   let versions = {};
-  try { versions = JSON.parse(fs.readFileSync(path.join(dir, 'versions.json'), 'utf8')); } catch { /* optional */ }
+  try { versions = JSON.parse(fs.readFileSync(path.join(dir, 'versions.json'), 'utf8')); } catch { /* optional, for builds without a version in the name */ }
   return APPS.map(({ match, notes, ...a }) => {
-    const pick = match.map((re) => files.filter((x) => re.test(x.f)).sort((p, q) => q.s.mtimeMs - p.s.mtimeMs)[0]).find(Boolean);
+    const pick = match.map((re) => files.filter((x) => re.test(x.f)).sort(byVersion)[0]).find(Boolean);
     const ext = pick ? path.extname(pick.f).slice(1).toLowerCase() : null;
     return { ...a, file: pick?.f || null, note: notes[ext] || Object.values(notes)[0], available: !!pick, url: pick ? `/downloads/${encodeURIComponent(pick.f)}` : null,
-      size: pick?.s.size || null, version: versions[a.id] || null, updated_at: pick?.s.mtimeMs || null };
+      size: pick?.s.size || null, version: (pick && fileVersion(pick.f)) || versions[a.id] || null, updated_at: pick?.s.mtimeMs || null };
   });
 }
 route('GET', '/api/downloads', async () => appBuilds());
