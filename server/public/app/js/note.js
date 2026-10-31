@@ -59,6 +59,20 @@ class NoteController {
 
   // ---------- Saving ----------
 
+  /** Lets the user set when the note was created. */
+  async editCreated() {
+    const d = new Date(this.note.created_at);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const v = await promptBox('Created on', { label: 'Date and time', value: local, type: 'datetime-local', ok: 'Save' });
+    if (!v) return;
+    const ms = new Date(v).getTime();
+    if (!ms || ms > Date.now()) return toast('Pick a date that isn't in the future.', { error: true });
+    this.note.created_at = ms;
+    this.queue({ created_at: ms });
+    await this.flush();
+    this.metaEl?.replaceWith(this.metaRow());
+  }
+
   queue(fields) {
     Object.assign(this.pending, fields);
     this.lastTyped = Date.now();
@@ -141,7 +155,7 @@ class NoteController {
       n.notebook_id && notebook(n.notebook_id) ? [h('a', { href: `#/w/${state.wsId}/nb/${n.notebook_id}` }, notebook(n.notebook_id).name), h('span', { class: 'sep' }, '/')] : null,
       n.breadcrumbs.map((c) => [h('a', { href: `#/w/${state.wsId}/n/${c.id}` }, `${c.icon || ''} ${c.title || 'Untitled'}`), h('span', { class: 'sep' }, '/')]),
       this.crumbEl = h('span', { class: 'ellipsis', style: { padding: '2px 6px', color: 'var(--fg)' } }, `${n.icon ? n.icon + ' ' : ''}${n.title || 'Untitled'}`));
-    const pin = h('button', { class: 'btn icon' + (n.pinned ? ' on' : ''), title: n.pinned ? 'Remove from shortcuts' : 'Add to shortcuts',
+    const pin = h('button', { class: 'btn icon' + (n.pinned ? ' on' : ''), title: n.pinned ? 'Unpin' : 'Pin',
       onclick: async () => { n.pinned = !n.pinned; pin.classList.toggle('on', n.pinned); this.queue({ pinned: n.pinned }); await this.flush(); refreshBoot(); } }, icon('star'));
     const top = h('div', { class: 'topbar' }, crumbs, this.statusEl, this.presenceEl,
       canWrite() && !n.trashed_at ? [
@@ -154,6 +168,12 @@ class NoteController {
       h('button', { class: 'btn icon', title: 'More', onclick: (e) => this.moreMenu(e.currentTarget) }, icon('more')));
 
     this.scroll = h('div', { class: 'main-scroll' });
+    // Clicking or tapping blank space anywhere in the page (margins, below the last line) starts typing at the end.
+    this.scroll.addEventListener('click', (e) => {
+      if (this.readOnly || window.getSelection()?.toString()) return;
+      if (e.target.closest('[contenteditable="true"], a, button, input, textarea, select, label, .blk, .doc-props, .db, .backlinks, .doc-meta, .doc-icon, .doc-add')) return;
+      this.editor?.focusEnd();
+    });
     const wide = store.get('wide:' + n.id, n.kind === 'db');
     const doc = h('div', { class: 'doc' + (wide ? ' wide' : '') });
     this.doc = doc;
@@ -215,7 +235,11 @@ class NoteController {
     if (n.reminder_at) row.append(h('span', { class: 'chip', style: n.reminder_done ? { textDecoration: 'line-through' } : null }, '⏰ ', fmtDate(n.reminder_at),
       ro ? null : h('button', { title: 'Remove reminder', onclick: () => this.setReminder(null) }, '×')));
     const by = member(n.updated_by);
-    row.append(h('span', { class: 'grow' }), h('span', {}, `${by ? by.name + ' · ' : ''}${relTime(n.updated_at)}`));
+    // The creation date is editable (handy for notes copied in from paper or another app).
+    const created = new Date(n.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    const createdEl = ro ? h('span', { class: 'muted' }, 'Created ' + created)
+      : h('button', { class: 'btn sm', style: { borderColor: 'transparent', color: 'var(--muted)' }, title: 'Change the creation date', onclick: () => this.editCreated() }, 'Created ' + created);
+    row.append(h('span', { class: 'grow' }), createdEl, h('span', {}, `Edited ${by ? 'by ' + by.name + ' ' : ''}${relTime(n.updated_at)}`));
     this.metaEl = row;
     return row;
   }

@@ -79,11 +79,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Date
 
-/** Recently opened notes, kept on the phone for the "Recently visited" row. */
+/** Recently opened notes, kept on the phone for the "Jump back in" row. */
 object Visits {
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("visits", Context.MODE_PRIVATE)
     fun track(ctx: Context, ws: Long, id: String) {
@@ -95,14 +94,16 @@ object Visits {
 
 /** Which widgets the person hid with Customize. */
 object HomePrefs {
-    val WIDGETS = listOf("recent" to "Recently visited", "scratch" to "Scratch pad", "tasks" to "Tasks", "shortcuts" to "Shortcuts",
+    val WIDGETS = listOf("recent" to "Jump back in", "scratch" to "Quick jot", "tasks" to "Tasks", "shortcuts" to "Pinned",
         "reminders" to "Reminders", "notebooks" to "Notebooks", "edited" to "Recently edited")
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("home", Context.MODE_PRIVATE)
     fun hidden(ctx: Context): Set<String> = prefs(ctx).getStringSet("hidden", emptySet())!!
     fun setHidden(ctx: Context, v: Set<String>) = prefs(ctx).edit().putStringSet("hidden", v).apply()
 }
 
-const val SCRATCH_TITLE = "Scratch pad"
+const val SCRATCH_TITLE = "Quick jot"
+/** Quick jot notes created before the rename are still found. */
+fun isScratch(n: NoteEntity) = n.title == SCRATCH_TITLE || n.title == "Scratch pad"
 
 private fun scratchText(blocks: List<Block>): String {
     var n = 0
@@ -140,10 +141,8 @@ fun HomeDashboard(
     val todoNotes by dao.notesWithTodos(ws).collectAsState(initial = emptyList())
     val tasks = remember(todoNotes) { todoNotes.flatMap { Blocks.openTasks(it.id, it.title, Blocks.parse(it.content)) } }
     val visited = remember(all) { Visits.get(ctx, ws).mapNotNull { id -> all.firstOrNull { it.id == id } } }
-    val recent = (visited + all.sortedByDescending { it.updatedAt }.filter { it !in visited }).filter { it.title != SCRATCH_TITLE }.take(12)
+    val recent = (visited + all.sortedByDescending { it.updatedAt }.filter { it !in visited }).filter { !isScratch(it) }.take(12)
     val cs = MaterialTheme.colorScheme
-    val hour = LocalTime.now().hour
-    val greeting = when { hour < 5 -> "Good evening"; hour < 12 -> "Good morning"; hour < 18 -> "Good afternoon"; else -> "Good evening" }
     val first = s.user?.name?.substringBefore(' ').orEmpty()
     val today = LocalDate.now().toString()
     val dueRe = remember { Regex("@\\d{4}-\\d{2}-\\d{2}") }
@@ -163,7 +162,7 @@ fun HomeDashboard(
                 }
             }
         },
-        Widget("shortcuts", "Shortcuts", Icons.Default.Star) {
+        Widget("shortcuts", "Pinned", Icons.Default.Star) {
             if (pinned.isEmpty()) Empty("Star a note to pin it here.")
             pinned.take(6).forEach { NoteLine(it, null) { onOpen(it.id) } }
         },
@@ -194,11 +193,11 @@ fun HomeDashboard(
         val columns = when { maxWidth >= 1050.dp -> 3; maxWidth >= 600.dp -> 2; else -> 1 }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
             Column(Modifier.widthIn(max = 1040.dp).fillMaxWidth().padding(horizontal = if (roomy) 32.dp else 16.dp).padding(top = 8.dp, bottom = if (LocalPill.current != null) PillClearance else 40.dp)) {
-                // The greeting is the page title (the top bar stays empty on Home, like Notion).
+                // The greeting is the page title (the top bar stays empty on Home).
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d")), color = cs.onSurfaceVariant, fontSize = 14.sp)
-                        Text("$greeting${if (first.isNotBlank()) ", $first" else ""}", fontSize = if (roomy) 30.sp else 26.sp, lineHeight = if (roomy) 36.sp else 31.sp,
+                        Text(if (first.isNotBlank()) "Hi $first, here's your day" else "Here's your day", fontSize = if (roomy) 30.sp else 26.sp, lineHeight = if (roomy) 36.sp else 31.sp,
                             fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 2.dp))
                     }
                     IconButton(onClick = onCustomize) { Icon(Icons.Default.Tune, "Customize Home", tint = cs.onSurfaceVariant) }
@@ -214,7 +213,7 @@ fun HomeDashboard(
                 }
 
                 if ("recent" !in hidden && recent.isNotEmpty()) {
-                    SectionLabel(Icons.Default.History, "Recently visited", Modifier.padding(top = 28.dp, bottom = 10.dp))
+                    SectionLabel(Icons.Default.History, "Jump back in", Modifier.padding(top = 28.dp, bottom = 10.dp))
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         recent.forEach { n -> RecentCard(n) { onOpen(n.id) } }
                     }
@@ -287,11 +286,11 @@ private fun RecentCard(n: NoteEntity, onClick: () -> Unit) {
     }
 }
 
-/** The scratch pad is a real note (titled "Scratch pad"), so it works offline and syncs with the web app's Home. */
+/** Quick jot is a real note (titled "Quick jot"), so it works offline and syncs with the web app's Home. */
 @OptIn(kotlinx.coroutines.FlowPreview::class)
 @Composable
 private fun ScratchPad(app: PliopadApp, all: List<NoteEntity>) {
-    val note = all.firstOrNull { it.title == SCRATCH_TITLE }
+    val note = all.firstOrNull { isScratch(it) }
     var text by remember(note?.id) { mutableStateOf(note?.let { scratchText(Blocks.parse(it.content)) } ?: "") }
     var noteId by remember(note?.id) { mutableStateOf(note?.id) }
     LaunchedEffect(noteId) {

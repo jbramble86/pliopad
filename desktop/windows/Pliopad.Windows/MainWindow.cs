@@ -182,9 +182,8 @@ public sealed partial class MainWindow : Window
     {
         R.TrackVisit(id);
         var n = R.Note(id);
-        // From a list, the note opens beside it; from Home/Tasks it takes the whole page, like Notion.
-        if (Route.HasList && n != null && InCurrentList(n)) Navigate(Route, id);
-        else Navigate(new Route("note"), id);
+        // The note list always stays beside the open note: the current list if the note is in it, otherwise All notes.
+        Navigate(Route.HasList && n != null && InCurrentList(n) ? Route : new Route("all"), id);
     }
 
     private bool InCurrentList(Note n) => Route.Kind switch
@@ -234,6 +233,7 @@ public sealed partial class MainWindow : Window
             "home" => new HomeView(this),
             "tasks" => new TasksView(this),
             "ask" => new AskView(this),
+            "sphere" => new SphereView(this),
             _ => EmptyPane(),
         };
     }
@@ -274,7 +274,7 @@ public sealed partial class MainWindow : Window
         if (!R.CanWrite) return null;
         notebookId ??= Route.Kind == "notebook" ? Route.Arg : null;
         var id = R.CreateNote(title, blocks ?? [], notebookId);
-        if (Route.HasList && Route.Kind is "notebook" or "all") Navigate(Route, id); else Navigate(new Route("note"), id);
+        Navigate(Route.HasList && Route.Kind is "notebook" or "all" ? Route : new Route("all"), id);
         _noteView?.FocusTitle();
         return id;
     }
@@ -283,7 +283,7 @@ public sealed partial class MainWindow : Window
     {
         if (!R.CanWrite) return;
         var id = R.NewDatabase(Route.Kind == "notebook" ? Route.Arg : null);
-        Navigate(new Route("note"), id);
+        Navigate(new Route("all"), id);
         _noteView?.FocusTitle();
     }
 
@@ -313,6 +313,7 @@ public sealed partial class MainWindow : Window
         Add(VirtualKey.Number1, C, () => Navigate(new Route("home")));
         Add(VirtualKey.Number2, C, () => Navigate(new Route("tasks")));
         Add(VirtualKey.Number3, C, () => Navigate(new Route("all")));
+        Add(VirtualKey.Number4, C, () => Navigate(new Route("sphere")));
         Add(VirtualKey.O, C | VirtualKeyModifiers.Shift, () => { if (OpenNoteId != null) NoteWindow.Open(OpenNoteId); });
     }
 }

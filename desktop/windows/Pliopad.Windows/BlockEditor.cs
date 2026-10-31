@@ -143,8 +143,9 @@ public sealed class BlockEditor : StackPanel
     public void ClickBelow()
     {
         if (ReadOnly) return;
+        // The cursor goes to the end of the last line; a new line is only added when the note ends in an image, divider or page.
         var last = _blocks[^1];
-        if (last.T == "p" && last.X.Length == 0) { FocusEnd(); return; }
+        if (Core.Blocks.TextTypes.Contains(last.T)) { FocusEnd(); return; }
         Insert(_blocks.Count, new Block()).FocusAt(0);
     }
 

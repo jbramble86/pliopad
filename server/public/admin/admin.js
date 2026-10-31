@@ -8,7 +8,7 @@ if (theme !== 'system') document.documentElement.dataset.theme = theme;
 
 const NAV = [
   ['overview', 'Overview', 'home'], ['tenants', 'Workspaces', 'book'], ['users', 'Users', 'users'], ['audit', 'Audit log', 'history'],
-  [null, 'Configuration'], ['plans', 'Plans & billing', 'card'], ['settings', 'Settings', 'gear'], ['system', 'System health', 'shield'],
+  [null, 'Configuration'], ['plans', 'Plans & billing', 'card'], ['settings', 'Settings', 'gear'], ['system', 'System health', 'shield'], ['maintenance', 'Maintenance', 'gear'],
 ];
 let shell = null;
 
@@ -55,7 +55,7 @@ async function route() {
   shell.body.replaceChildren(h('div', { class: 'empty' }, 'Loading…'));
   document.querySelector('.sheet')?.remove();
   try {
-    await ({ overview, tenants, users, audit, plans, settings, system }[page] || overview)(arg);
+    await ({ overview, tenants, users, audit, plans, settings, system, maintenance }[page] || overview)(arg);
   } catch (e) {
     shell.body.replaceChildren(h('div', { class: 'card' }, e.message));
   }
@@ -414,6 +414,48 @@ async function system() {
     ['App downloads', h('div', {}, h('code', {}, s.downloads_dir), ...(s.downloads || []).map((d) => h('div', { style: { marginTop: '4px' } }, `${d.name}: `, d.file ? h('code', {}, d.file + (d.version ? ` (v${d.version})` : '')) : h('span', { class: 'status warn' }, 'not found'))))],
   ];
   shell.body.replaceChildren(h('div', { class: 'tbl health' }, h('table', {}, h('tbody', {}, rows.map(([k, v]) => h('tr', { style: { cursor: 'default' } }, h('td', {}, k), h('td', {}, v)))))));
+}
+
+// ---------- Maintenance: take the platform offline, and run upkeep tasks ----------
+
+async function maintenance() {
+  header('Maintenance');
+  const render = (d) => {
+    const m = d.mode;
+    const msg = h('textarea', { class: 'input', rows: 2, placeholder: 'What people see, e.g. “Upgrading the database. Back by 10 pm.”' }, m?.message || '');
+    const local = (t) => { const x = new Date(t); return new Date(x - x.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+    const until = h('input', { class: 'input', type: 'datetime-local', value: m?.until ? local(m.until) : '' });
+    const setMode = async (on) => {
+      if (on && !(await confirmBox('Start maintenance?', 'Everyone except platform admins sees the maintenance page. The Windows and Android apps keep working offline and sync afterwards.', { ok: 'Start maintenance', danger: true }))) return;
+      try { render(await api('POST', '/admin/maintenance/mode', { on, message: msg.value.trim(), until: until.value ? new Date(until.value).getTime() : null })); toast(on ? 'Maintenance mode is on' : 'PlioPad is back online'); }
+      catch (e) { toast(e.message, { error: true }); }
+    };
+    const modeCard = h('div', { class: 'card', style: { marginBottom: '16px', borderColor: m ? 'var(--warn)' : '' } },
+      h('h3', {}, 'Maintenance mode ', h('span', { class: 'status ' + (m ? 'warn' : 'ok') }, m ? 'On: only platform admins can use PlioPad' : 'Off: PlioPad is online')),
+      h('div', { class: 'sub' }, m ? `Started ${relTime(m.started_at)}${m.by ? ' by ' + m.by : ''}. You can keep working and test while it is on.` : 'Take PlioPad offline for everyone but platform admins while you upgrade, restore or clean up.'),
+      h('label', { class: 'field' }, h('span', {}, 'Message'), msg),
+      h('label', { class: 'field' }, h('span', {}, 'Expected back (optional)'), until),
+      h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } },
+        m ? [h('button', { class: 'btn primary', onclick: () => setMode(false) }, 'End maintenance'), h('button', { class: 'btn', onclick: () => setMode(true) }, 'Update message')]
+          : h('button', { class: 'btn danger', onclick: () => setMode(true) }, 'Start maintenance')));
+    const tasks = h('div', { class: 'card' }, h('h3', {}, 'Upkeep tasks'),
+      h('div', { class: 'sub' }, 'Safe to run at any time; heavier ones are best run during maintenance. Start with a backup.'),
+      h('div', { class: 'tbl' }, h('table', {}, h('tbody', {}, d.tasks.map((t) => {
+        const btn = h('button', { class: 'btn sm' }, 'Run');
+        btn.onclick = async () => {
+          btn.disabled = true; btn.textContent = 'Running…';
+          try { const r = await api('POST', '/admin/maintenance/run', { task: t.id }); toast(r.result.message, { error: !r.result.ok }); render(r); }
+          catch (e) { toast(e.message, { error: true }); btn.disabled = false; btn.textContent = 'Run'; }
+        };
+        return h('tr', { style: { cursor: 'default' } },
+          h('td', {}, h('div', { style: { fontWeight: 600 } }, t.title), h('div', { class: 'sub', style: { margin: 0 } }, t.detail)),
+          h('td', { style: { width: '38%' } }, t.last ? h('div', {}, h('span', { class: 'status ' + (t.last.ok ? 'ok' : 'bad') }, relTime(t.last.at)), h('div', { class: 'sub', style: { margin: 0 } }, t.last.message)) : h('span', { class: 'sub' }, 'Not run yet')),
+          h('td', { style: { width: '90px', textAlign: 'right' } }, btn));
+      })))),
+      d.backups.length ? h('div', { class: 'sub', style: { marginTop: '12px' } }, `Backups in pliopad-data/backups: ${d.backups.map((b) => `${b.name} (${Math.round(b.size / 1024).toLocaleString()} KB)`).join(', ')}`) : null);
+    shell.body.replaceChildren(modeCard, tasks);
+  };
+  render(await api('GET', '/admin/maintenance'));
 }
 
 boot();

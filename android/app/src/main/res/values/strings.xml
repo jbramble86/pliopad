@@ -6,8 +6,8 @@
     <string name="widget_tasks_desc">Open to-dos from every note. Tick them off right here.</string>
     <string name="widget_note_label">PlioPad pinned note</string>
     <string name="widget_note_desc">Keep a note on your home screen. Checklists can be ticked in place.</string>
-    <string name="widget_shortcuts_label">PlioPad shortcuts</string>
-    <string name="widget_shortcuts_desc">Your starred and recently edited notes</string>
-    <string name="widget_graph_label">PlioPad graph</string>
-    <string name="widget_graph_desc">A live map of how your notes link together. Tap to explore.</string>
+    <string name="widget_shortcuts_label">PlioPad pinned &amp; recent</string>
+    <string name="widget_shortcuts_desc">Your pinned and recently edited notes</string>
+    <string name="widget_graph_label">PlioSphere</string>
+    <string name="widget_graph_desc">Your notes as a 3D map of linked ideas. Tap to explore.</string>
 </resources>

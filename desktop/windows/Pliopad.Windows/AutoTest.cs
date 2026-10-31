@@ -58,6 +58,9 @@ public static class AutoTest
             if (db != null) { w.Navigate(new Route("note"), db.Id); await Shot("05-database", 1500); }
             w.Navigate(new Route("search", "launch"));
             await Shot("06-search");
+            w.Navigate(new Route("sphere"));
+            await Shot("07-sphere", 2500);
+            if (plan != null) { w.Navigate(new Route("home")); w.OpenNote(plan.Id); await Shot("08-note-from-home"); }
             if (Environment.GetEnvironmentVariable("PLIOPAD_SHOTS_STAY") == null) w.Close();
         }
         catch (Exception e) { File.WriteAllText(Path.Combine(dir, "error.txt"), e.ToString()); w.Close(); }

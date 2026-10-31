@@ -1,6 +1,6 @@
 {
   "name": "pliopad",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "PlioPad: server, web app, Android and Windows apps. Hosting runs the server from this folder.",
   "type": "module",

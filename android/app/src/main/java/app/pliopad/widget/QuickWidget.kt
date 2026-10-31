@@ -57,6 +57,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import java.time.LocalDate
 
 // ---------- Shared look: PlioPad's colors, following the phone's light/dark mode ----------
@@ -256,7 +257,7 @@ internal fun NoteContent(note: NoteEntity?) {
 
 class NoteWidgetReceiver : GlanceAppWidgetReceiver() { override val glanceAppWidget: GlanceAppWidget = NoteWidget() }
 
-// ---------- 4. Shortcuts & recent ----------
+// ---------- 4. Pinned & recent ----------
 
 class ShortcutsWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Exact
@@ -278,7 +279,7 @@ internal fun ShortcutsContent(signedIn: Boolean, pinned: List<NoteEntity>, recen
                     Header("PlioPad", "+ Note" to actionStartActivity(openIntent(ctx, action = "new")))
                     if (!signedIn) { Muted("Sign in to PlioPad"); return@Column }
                     LazyColumn(GlanceModifier.fillMaxSize()) {
-                        if (pinned.isNotEmpty()) item { Section("★  Shortcuts") }
+                        if (pinned.isNotEmpty()) item { Section("★  Pinned") }
                         items(pinned.take(12), itemId = { ("p" + it.id).hashCode().toLong() }) { NoteLine(ctx, it) }
                         if (recent.isNotEmpty()) item { Section("Recently edited") }
                         items(recent.take(10), itemId = { ("r" + it.id).hashCode().toLong() }) { NoteLine(ctx, it) }
@@ -298,7 +299,7 @@ internal fun ShortcutsContent(signedIn: Boolean, pinned: List<NoteEntity>, recen
 
 class ShortcutsWidgetReceiver : GlanceAppWidgetReceiver() { override val glanceAppWidget: GlanceAppWidget = ShortcutsWidget() }
 
-// ---------- 5. Graph: a live picture of how your notes connect ----------
+// ---------- 5. PlioSphere: a live picture of how your notes connect ----------
 
 class GraphWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Exact
@@ -306,7 +307,7 @@ class GraphWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val app = context.applicationContext as PliopadApp
         val ws = signedInWs(context)
-        val graph = if (ws == null) null else app.dao.allNotesList(ws).let { GraphModel.build(it, maxNodes = 90) }
+        val graph = if (ws == null) null else app.dao.allNotesList(ws).let { GraphModel.build(it, maxNodes = 90, tagNames = app.dao.tags(ws).first().associate { t -> t.id to t.name }) }
         provideContent { GraphContent(graph) }
     }
 }
@@ -320,7 +321,7 @@ internal fun GraphContent(graph: GraphModel.Graph?) {
         Column(GlanceModifier.fillMaxSize().background(Color(0xFF101D59)).cornerRadius(22.dp).padding(12.dp)
             .clickable(actionStartActivity(openIntent(ctx, action = "graph")))) {
             Row(GlanceModifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Graph", style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = androidx.glance.unit.ColorProvider(Color.White)), modifier = GlanceModifier.defaultWeight())
+                Text(GraphModel.NAME, style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = androidx.glance.unit.ColorProvider(Color.White)), modifier = GlanceModifier.defaultWeight())
                 if (graph != null) Text("${graph.nodes.size} notes · ${graph.edges.size} links", style = TextStyle(fontSize = 11.sp, color = androidx.glance.unit.ColorProvider(Color(0xFF83EBC0))))
             }
             if (graph == null) { Text("Sign in to PlioPad", style = TextStyle(fontSize = 13.sp, color = androidx.glance.unit.ColorProvider(Color(0xFFAEB6E0)))); return@Column }
@@ -329,7 +330,7 @@ internal fun GraphContent(graph: GraphModel.Graph?) {
             val w = (size.width.value - 24).coerceAtLeast(80f); val h = (size.height.value - 48).coerceAtLeast(60f)
             val scale = (density * minOf(1f, 560f / maxOf(w, h)))
             val bmp = GraphModel.render(graph, (w * scale).toInt(), (h * scale).toInt(), scale)
-            androidx.glance.Image(androidx.glance.ImageProvider(bmp), contentDescription = "Graph of your linked notes", modifier = GlanceModifier.fillMaxSize().cornerRadius(14.dp))
+            androidx.glance.Image(androidx.glance.ImageProvider(bmp), contentDescription = "PlioSphere: your linked notes", modifier = GlanceModifier.fillMaxSize().cornerRadius(14.dp))
         }
     }
 }

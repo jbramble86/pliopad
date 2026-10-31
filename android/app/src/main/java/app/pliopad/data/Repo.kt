@@ -37,7 +37,8 @@ class Repo(private val ctx: Context, val dao: PliopadDao, val session: Session) 
     ): String {
         val ws = ws()
         val id = UUID.randomUUID().toString()
-        val nb = notebookId ?: if (useDefaultNotebook && parentId == null) defaultNotebook(ws) else null
+        // Every page lives in a notebook: sub-pages and database rows share their parent's, everything else defaults to the Inbox.
+        val nb = parentId?.let { dao.note(it)?.notebookId } ?: notebookId ?: defaultNotebook(ws)
         val content = Blocks.encode(blocks)
         dao.upsertNote(NoteEntity(id = id, wsId = ws, notebookId = nb, parentId = parentId, title = title, content = content,
             plain = Blocks.plain(blocks), kind = kind, dbSchema = dbSchema, props = props, dirty = true, rev = 1, sort = System.currentTimeMillis().toDouble()))
@@ -57,6 +58,7 @@ class Repo(private val ctx: Context, val dao: PliopadDao, val session: Session) 
     suspend fun setIcon(id: String, icon: String?) = update(id) { it.copy(icon = icon) }
     suspend fun moveTo(id: String, notebookId: String?) = update(id) { it.copy(notebookId = notebookId) }
     suspend fun setReminder(id: String, at: Long?) = update(id) { it.copy(reminderAt = at, reminderDone = false) }
+    suspend fun setCreated(id: String, at: Long) = update(id) { it.copy(createdAt = minOf(at, System.currentTimeMillis())) }
     suspend fun trash(id: String) = update(id) { it.copy(trashedAt = System.currentTimeMillis()) }
     suspend fun restore(id: String) = update(id) { it.copy(trashedAt = null) }
     suspend fun deleteForever(id: String) = update(id) { it.copy(deleted = true) }

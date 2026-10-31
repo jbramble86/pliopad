@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-export const VERSION = '1.1.0';
+export const VERSION = '1.2.0';
 const argConfig = process.argv.find((a) => a.startsWith('--config='))?.slice(9);
 /**
  * The data folder: settings (config.json), uploaded files (storage/) and app downloads (downloads/) live here, outside the

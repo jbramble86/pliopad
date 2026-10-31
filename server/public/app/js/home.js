@@ -1,26 +1,23 @@
-// Home: an Evernote-style dashboard of widgets (recent notes, scratch pad, tasks, shortcuts, reminders, notebooks),
-// laid out and styled like a Notion page.
+// Home: PlioPad's dashboard of widgets (jump back in, quick jot, tasks, pinned notes, reminders, notebooks).
 import { h, icon, toast, debounce, relTime, store, uuid } from './ui.js';
 import { state, wsApi, canWrite, noteMeta, notebook } from './api.js';
 import { go, createNote, quickCapture, dailyNote, palette } from './main.js';
 import { markdownToBlocks } from './editor.js';
 
 const WIDGETS = [
-  ['recent', 'Recently visited'], ['scratch', 'Scratch pad'], ['tasks', 'Tasks'], ['shortcuts', 'Shortcuts'],
+  ['recent', 'Jump back in'], ['scratch', 'Quick jot'], ['tasks', 'Tasks'], ['shortcuts', 'Pinned'],
   ['reminders', 'Reminders'], ['notebooks', 'Notebooks'], ['updated', 'Recently edited'],
 ];
-const SCRATCH_TITLE = 'Scratch pad';
+const SCRATCH_TITLE = 'Quick jot';
+// Notes created before the rename are still found.
+const isScratch = (n) => n.title === SCRATCH_TITLE || n.title === 'Scratch pad';
 
-/** Remembers that a note was opened, for the "Recently visited" row. */
+/** Remembers that a note was opened, for the "Jump back in" row. */
 export function trackVisit(id) {
   const key = 'recent:' + state.wsId;
   store.set(key, [id, ...store.get(key, []).filter((x) => x !== id)].slice(0, 24));
 }
 
-function greeting() {
-  const hr = new Date().getHours();
-  return hr < 5 ? 'Good evening' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
-}
 
 const live = () => state.boot.tree.filter((n) => !n.trashed_at && !n.is_template);
 const open = (id) => go(`#/w/${state.wsId}/n/${id}`);
@@ -46,7 +43,7 @@ export async function homePage(main) {
   const name = (state.me.user.name || '').split(' ')[0];
   const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
-  // ---- Recently visited: cards like Notion's home ----
+  // ---- Jump back in: the notes you opened last, as cards ----
   const visited = store.get('recent:' + state.wsId, []).map(noteMeta).filter((n) => n && !n.trashed_at);
   const recent = [...visited, ...[...notes].sort((a, b) => b.updated_at - a.updated_at).filter((n) => !visited.includes(n))].slice(0, 10);
   const recentRow = h('div', { class: 'hw-cards' },
@@ -54,9 +51,9 @@ export async function homePage(main) {
       h('div', { class: 'hw-card-top' }), h('div', { class: 'hw-card-ico' }, ico(n)),
       h('div', { class: 'hw-card-title' }, label(n)), h('div', { class: 'hw-card-meta' }, relTime(n.updated_at)))));
 
-  // ---- Scratch pad: a real note, so it syncs to the phone and works offline there ----
+  // ---- Quick jot: a real note, so it syncs to the phone and works offline there ----
   const scratchBox = h('textarea', { class: 'hw-scratch', placeholder: 'Jot something down…  It saves as you type and syncs to your phone.', disabled: !canWrite() });
-  let scratchId = notes.find((n) => n.title === SCRATCH_TITLE)?.id || null;
+  let scratchId = notes.find(isScratch)?.id || null;
   let scratchVersion = null;
   (async () => {
     if (!scratchId) return;
@@ -102,7 +99,7 @@ export async function homePage(main) {
     } catch (e) { tasksBody.replaceChildren(empty(e.message)); }
   })();
 
-  // ---- Shortcuts, reminders, notebooks, recently edited ----
+  // ---- Pinned, reminders, notebooks, recently edited ----
   const pinned = notes.filter((n) => n.pinned);
   const reminders = notes.filter((n) => n.reminder_at && !n.reminder_done).sort((a, b) => a.reminder_at - b.reminder_at).slice(0, 6);
   const counts = {};
@@ -110,10 +107,10 @@ export async function homePage(main) {
   const edited = [...notes].sort((a, b) => b.updated_at - a.updated_at).slice(0, 8);
 
   const widgets = {
-    scratch: section('scratch', 'Scratch pad', 'note', h('div', {}, scratchBox, h('div', { class: 'row' }, scratchStatus, h('span', { class: 'grow' }),
+    scratch: section('scratch', 'Quick jot', 'note', h('div', {}, scratchBox, h('div', { class: 'row' }, scratchStatus, h('span', { class: 'grow' }),
       scratchId ? h('a', { class: 'hw-more', href: '#', onclick: (e) => { e.preventDefault(); open(scratchId); } }, 'Open as page →') : null))),
     tasks: section('tasks', 'Tasks', 'checksq', tasksBody, h('a', { class: 'hw-more', href: `#/w/${state.wsId}/tasks` }, 'All')),
-    shortcuts: section('shortcuts', 'Shortcuts', 'star', pinned.length ? h('div', {}, pinned.map((n) => row(n))) : empty('Star a note to pin it here.')),
+    shortcuts: section('shortcuts', 'Pinned', 'star', pinned.length ? h('div', {}, pinned.map((n) => row(n))) : empty('Pin a note to keep it here.')),
     reminders: section('reminders', 'Reminders', 'bell', reminders.length ? h('div', {}, reminders.map((n) => row(n, new Date(n.reminder_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))))
       : empty('No upcoming reminders.')),
     notebooks: section('notebooks', 'Notebooks', 'book', state.boot.notebooks.length ? h('div', { class: 'hw-grid' }, state.boot.notebooks.map((nb) =>
@@ -142,10 +139,10 @@ export async function homePage(main) {
   const page = h('div', { class: 'home' },
     h('div', { class: 'home-inner' },
       h('div', { class: 'home-head' },
-        h('div', { class: 'grow' }, h('div', { class: 'home-sub' }, today), h('h1', { class: 'home-title' }, `${greeting()}${name ? ', ' + name : ''}`)),
+        h('div', { class: 'grow' }, h('div', { class: 'home-sub' }, today), h('h1', { class: 'home-title' }, name ? `Hi ${name}, here's your day` : "Here's your day")),
         h('button', { class: 'btn icon home-custom', title: 'Customize Home', onclick: customize }, icon('gear'))),
       h('div', { class: 'home-quick' }, quick.map(([e, l, run]) => h('button', { class: 'home-q', onclick: run }, h('span', {}, e), l))),
-      hidden.has('recent') ? null : section('recent', 'Recently visited', 'history', recent.length ? recentRow : empty('Pages you open show up here.')),
+      hidden.has('recent') ? null : section('recent', 'Jump back in', 'history', recent.length ? recentRow : empty('Pages you open show up here.')),
       h('div', { class: 'home-cols' }, ['scratch', 'tasks', 'shortcuts', 'reminders', 'notebooks', 'updated'].filter((k) => !hidden.has(k)).map((k) => widgets[k]))));
 
   main.replaceChildren(h('div', { class: 'topbar' },
@@ -153,7 +150,7 @@ export async function homePage(main) {
     h('span', { class: 'crumbs' }, h('span', { style: { padding: '2px 6px', color: 'var(--fg)' } }, '🏡 Home'))), h('div', { class: 'main-scroll' }, page));
 }
 
-/** Scratch pad blocks back to the plain text shown in the box. */
+/** Quick jot blocks back to the plain text shown in the box. */
 function blocksToText(blocks) {
   let n = 0;
   return (blocks || []).map((b) => {

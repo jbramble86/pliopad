@@ -120,7 +120,7 @@ public static class QuickCapture
         var nbPick = new ComboBox { ItemsSource = notebooks.Select(n => $"{n.Icon ?? "📓"}  {n.Name}").ToList(), MinWidth = 180 };
         var def = R.DefaultNotebook();
         nbPick.SelectedIndex = Math.Max(0, notebooks.FindIndex(n => n.Id == def));
-        var pin = new CheckBox { Content = "Add to shortcuts", MinWidth = 0 };
+        var pin = new CheckBox { Content = "Pin it", MinWidth = 0 };
         var save = new Button { Content = "Save  Ctrl+Enter", Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
 
         void Save()

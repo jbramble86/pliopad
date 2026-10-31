@@ -13,6 +13,7 @@ desktop/windows/**/obj/
 config.json
 server/storage/
 server/logs/
+server/backups/
 server/data/
 *.sqlite
 *.sqlite-*

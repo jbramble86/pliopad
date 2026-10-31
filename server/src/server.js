@@ -8,6 +8,7 @@ import { migrate } from './schema.js';
 import { dispatch, route, sendJson } from './http.js';
 import { renderPublicPage, renderInstaller } from './pages.js';
 import { renderLanding } from './landing.js';
+import { gate, status as maintenanceStatus } from './maintenance.js';
 import { startJobs } from './jobs.js';
 import { ROOT, DATA_DIR, DATA_DIR_SEARCHED, STARTUP_WARNINGS, appLog, DEFAULT_DATA_DIR, settingsTarget, CONFIG_FILE, VERSION, config, reloadConfig, isInstalled, loadSettings, setting, hmac, randomHex, nowMs, ApiError } from './util.js';
 import { hashPassword } from './auth.js';
@@ -27,7 +28,7 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 route('GET', '/api/health', async () => ({ ok: true, version: VERSION }));
 // /api/site-info: SiteGround's firewall blocks URLs ending in /config, so the web app uses this name (the old one is kept).
 const siteInfo = async () => ({ app_name: setting('app_name', 'PlioPad'), signup_mode: setting('signup_mode', 'open'),
-  terms_url: setting('terms_url'), privacy_url: setting('privacy_url'), version: VERSION });
+  terms_url: setting('terms_url'), privacy_url: setting('privacy_url'), version: VERSION, maintenance: maintenanceStatus() });
 route('GET', '/api/site-info', siteInfo);
 route('GET', '/api/config', siteInfo);
 
@@ -154,6 +155,8 @@ export const server = http.createServer(async (req, res) => {
       res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       return res.end(`<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="15"><title>PlioPad is starting</title><body style="font:16px system-ui;max-width:600px;margin:14vh auto;padding:0 16px;color:#101D59"><h1>${dbError ? 'PlioPad can\x27t reach its database' : 'PlioPad is starting'}</h1><p>${dbError ? `Error: <code>${code}</code>. It retries every 15 seconds; details are in <code>pliopad-data/logs/startup.log</code>.` : 'This takes a few seconds.'}</p></body>`);
     }
+    // Maintenance mode: everyone but platform admins sees the maintenance notice (the Stripe webhook still works).
+    if (p !== '/api/stripe/webhook' && (await gate(req, res, p))) return;
     if (p === '/api/stripe/webhook' && req.method === 'POST') {
       await webhook(await readBody(req), req.headers['stripe-signature'] || '');
       return sendJson(res, { received: true });

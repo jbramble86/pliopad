@@ -27,6 +27,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -158,6 +160,7 @@ fun NoteScreen(id: String, app: PliopadApp, ai: Boolean, onBack: () -> Unit, ope
                             DropdownMenuItem(text = { Text("Tags") }, onClick = { menu = false; dialog = "tags" })
                             DropdownMenuItem(text = { Text(if (n.reminderAt != null) "Change reminder" else "Add reminder") }, onClick = { menu = false; pickReminder(ctx) { at -> scope.launch { repo.setReminder(id, at); Reminders.scheduleAll(ctx, listOf(Triple(id, title, at))) } } })
                             if (n.reminderAt != null) DropdownMenuItem(text = { Text("Remove reminder") }, onClick = { menu = false; scope.launch { repo.setReminder(id, null); Reminders.cancel(ctx, id) } })
+                            if (!readOnly) DropdownMenuItem(text = { Text("Change created date") }, onClick = { menu = false; pickDateTime(ctx, n.createdAt, past = true) { at -> scope.launch { repo.setCreated(id, at) } } })
                             DropdownMenuItem(text = { Text(if (n.icon == null) "Add icon" else "Change icon") }, onClick = { menu = false; dialog = "icon" })
                             DropdownMenuItem(text = { Text("Add a page inside") }, onClick = { menu = false; scope.launch { save(); openNote(repo.createNote(parentId = id, notebookId = null, useDefaultNotebook = false)) } })
                             DropdownMenuItem(text = { Text("Comments") }, onClick = { menu = false; dialog = "comments" })
@@ -183,7 +186,9 @@ fun NoteScreen(id: String, app: PliopadApp, ai: Boolean, onBack: () -> Unit, ope
         bottomBar = { if (!readOnly && (editor.focusId != null || layout.tabletop)) Column(Modifier.imePadding()) { EditorToolbar(editor, onInsert = { dialog = "insert" }, onImage = { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, onScan = { scope.launch { Scanner.start(ctx as android.app.Activity) { scanLauncher.launch(it) } } }) } },
     ) { pad ->
         // Comfortable reading width on big screens; in tabletop posture the page stays above the fold.
-        Box(Modifier.padding(pad).fillMaxSize().let { m -> layout.tabletopTopDp?.let { m.heightIn(max = (it - 64.dp).coerceAtLeast(200.dp)) } ?: m }, contentAlignment = Alignment.TopCenter) {
+        // Tapping anywhere that isn't text or a button (blank space, margins, below the last line) starts typing at the end.
+        Box(Modifier.padding(pad).fillMaxSize().let { m -> layout.tabletopTopDp?.let { m.heightIn(max = (it - 64.dp).coerceAtLeast(200.dp)) } ?: m }
+            .pointerInput(readOnly) { if (!readOnly) detectTapGestures { editor.focusEnd() } }, contentAlignment = Alignment.TopCenter) {
         Column(Modifier.widthIn(max = 780.dp).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = if (layout.twoPane) 36.dp else 20.dp, vertical = 8.dp)) {
             if (n.trashedAt != null) Text("This note is in the trash.", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp))
             if (n.locked) Text("🔒 Locked to prevent accidental edits. Unlock it from the ⋮ menu.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
@@ -294,9 +299,17 @@ fun NoteScreen(id: String, app: PliopadApp, ai: Boolean, onBack: () -> Unit, ope
 
 private fun pickReminder(ctx: android.content.Context, onPicked: (Long) -> Unit) {
     val c = Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 9); set(Calendar.MINUTE, 0) }
-    DatePickerDialog(ctx, { _, y, m, d ->
-        TimePickerDialog(ctx, { _, hh, mm -> c.set(y, m, d, hh, mm, 0); onPicked(c.timeInMillis) }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), true).show()
-    }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
+    pickDateTime(ctx, c.timeInMillis, past = false, onPicked)
+}
+
+/** Date then time pickers, starting at [start]. With [past], future dates can't be picked (creation dates). */
+private fun pickDateTime(ctx: android.content.Context, start: Long, past: Boolean, onPicked: (Long) -> Unit) {
+    val c = Calendar.getInstance().apply { timeInMillis = start }
+    val dialog = DatePickerDialog(ctx, { _, y, m, d ->
+        TimePickerDialog(ctx, { _, hh, mm -> c.set(y, m, d, hh, mm, 0); onPicked(if (past) minOf(c.timeInMillis, System.currentTimeMillis()) else c.timeInMillis) }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), true).show()
+    }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH))
+    if (past) dialog.datePicker.maxDate = System.currentTimeMillis()
+    dialog.show()
 }
 
 private data class Prop(val id: String, val name: String, val type: String, val options: List<Pair<String, String>>)

@@ -130,6 +130,7 @@ public sealed class Repo
             if (changed > 0) Store.NotifyChanged();
         }
         catch (ApiException e) when (e.Status == 401) { SetStatus("Signed out"); await SignOut(); }
+        catch (ApiException e) when (e.Code == "maintenance") { SetStatus("PlioPad is down for maintenance — changes are saved on this PC"); }
         catch (Exception e) { SetStatus(e is HttpRequestException ? "Offline — changes are saved on this PC" : "Sync failed: " + e.Message); }
         finally { _syncLock.Release(); }
     }
@@ -192,7 +193,8 @@ public sealed class Repo
         var n = new Note
         {
             WsId = WsId, Title = title, Content = Blocks.Encode(blocks ?? []), Kind = kind, DbSchema = dbSchema, Icon = icon, ParentId = parentId,
-            NotebookId = notebookId ?? (useDefaultNotebook && parentId == null ? DefaultNotebook() : null), Sort = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            // Every page lives in a notebook: sub-pages and database rows share their parent's, everything else defaults to the Inbox.
+            NotebookId = (parentId != null ? Store.Note(parentId)?.NotebookId : null) ?? notebookId ?? DefaultNotebook(), Sort = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         };
         Store.SaveLocal(n);
         Changed();

@@ -242,6 +242,15 @@ class EditorState(initial: List<Block>) {
         version++
         list.lastOrNull { it.t in Blocks.TEXT_TYPES }?.let { focus(it.id, it.x.length) }
     }
+
+    /** A tap on blank space in the note: put the cursor at the end, adding a paragraph if the note ends in an image, divider or page. */
+    fun focusEnd() {
+        val last = blocks.lastOrNull()
+        if (last != null && last.t in Blocks.TEXT_TYPES) return focus(last.id, last.x.length)
+        val b = Block()
+        blocks.add(b)
+        focus(b.id, 0)
+    }
 }
 
 @Composable
@@ -253,11 +262,13 @@ fun BlockEditor(
     openUrl: (String) -> Unit,
 ) {
     val requesters = remember { mutableMapOf<String, FocusRequester>() }
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     LaunchedEffect(state.pendingFocus) {
         val (id, cursor) = state.pendingFocus ?: return@LaunchedEffect
         val b = state.blocks.firstOrNull { it.id == id } ?: return@LaunchedEffect
         state.fields[id] = TextFieldValue(ZW + b.x, TextRange(ZW.length + cursor.coerceIn(0, b.x.length)))
         runCatching { requesters[id]?.requestFocus() }
+        keyboard?.show()
         state.pendingFocus = null
     }
     var olCount = IntArray(9)

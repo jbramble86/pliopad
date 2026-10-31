@@ -331,9 +331,20 @@ table.grid td { padding: 9px 8px; border-bottom: 1px solid var(--line); vertical
 .task input { margin-top: 3px; accent-color: var(--accent); width: 16px; height: 16px; }
 .task .src { font-size: 12px; color: var(--muted); }
 .graph-wrap { position: relative; height: calc(100vh - 46px); }
-.graph-wrap canvas { width: 100%; height: 100%; display: block; cursor: default; }
+.graph-wrap canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+.graph-wrap.sphere { background: #0A1240; }
+.sphere-hint { position: absolute; left: 16px; bottom: 12px; font-size: 12px; color: #9BA4D0; pointer-events: none; }
+.sphere-stats { font-size: 12.5px; color: var(--muted); margin-right: 8px; }
+.sphere-card { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); width: min(440px, calc(100% - 32px)); display: flex; align-items: center; gap: 12px; padding: 12px 14px 12px 16px; border-radius: 16px; background: #FAF9F5; color: #101D59; box-shadow: 0 18px 40px -12px rgba(0,0,0,.5); }
+.sphere-card .muted { color: #5D6485; font-size: 13px; }
+.sphere-card[hidden] { display: none; }
+.sphere-why { font-size: 12.5px; color: #101D59; margin-top: 4px; }
+.sphere-why span { color: #5D6485; }
+.sphere-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin-right: 8px; cursor: pointer; }
 .answer { line-height: 1.7; }
 .answer h1, .answer h2, .answer h3 { font-size: 16px; }
+
+@media (hover: none) { .kbd-hint { display: none; } }
 
 /* ---------- Responsive ---------- */
 .mobile-only { display: none; }
@@ -407,3 +418,13 @@ section.hw[data-w="recent"] > .hw-head { color: var(--muted); font-size: 13px; f
 .apps .app-meta { font-size: 12.5px; margin-top: 2px; }
 .apps a.btn { text-decoration: none; white-space: nowrap; }
 @media (max-width: 600px) { .apps .app-card { flex-wrap: wrap; } .apps .app-card .btn { width: 100%; justify-content: center; } }
+
+/* ---------- Maintenance notice ---------- */
+.maintenance { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: radial-gradient(900px 500px at 70% 10%, #22348f, transparent 60%), #101D59; color: #fff; }
+.maintenance-card { max-width: 520px; padding: 32px 24px; text-align: center; }
+.maintenance-card img { width: 64px; height: 64px; margin: 0 auto 18px; display: block; }
+.maintenance-card h1 { margin: 0 0 10px; font-size: 30px; letter-spacing: -.02em; color: #fff; }
+.maintenance-card p { color: #C9CFEA; margin: 8px 0; }
+.maintenance-card .msg { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); border-radius: 14px; padding: 14px 18px; color: #fff; margin-top: 18px; }
+.maintenance-card .until { color: #83EBC0; font-weight: 600; }
+.maintenance-card .small { font-size: 13px; opacity: .7; margin-top: 22px; }

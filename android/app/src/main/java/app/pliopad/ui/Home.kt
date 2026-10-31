@@ -162,7 +162,6 @@ fun HomeScreen(
     var arg by rememberSaveable { mutableStateOf(initialArg) }
     val notebooks by dao.notebooks(ws).collectAsState(initial = emptyList())
     val tags by dao.tags(ws).collectAsState(initial = emptyList())
-    val pages by dao.topPages(ws).collectAsState(initial = emptyList())
     val templates by dao.templates(ws).collectAsState(initial = emptyList())
     val pending by dao.pendingCount(ws).collectAsState(initial = 0)
     val sync by dao.syncStateFlow(ws).collectAsState(initial = null)
@@ -192,7 +191,7 @@ fun HomeScreen(
         "home" -> "Home"
         "nb" -> currentNb?.let { "${it.icon ?: "📓"} ${it.name}" } ?: "Notebook"
         "tag" -> "#" + (currentTag?.name ?: "")
-        "pinned" -> "Shortcuts"; "reminders" -> "Reminders"; "trash" -> "Trash"; "templates" -> "Templates"
+        "pinned" -> "Pinned"; "reminders" -> "Reminders"; "trash" -> "Trash"; "templates" -> "Templates"
         else -> "All notes"
     }
     var refreshing by remember { mutableStateOf(false) }
@@ -202,13 +201,20 @@ fun HomeScreen(
     var customizing by remember { mutableStateOf(false) }
     var hiddenWidgets by remember { mutableStateOf(HomePrefs.hidden(ctx)) }
     val closedStacks = remember { mutableStateOf(setOf<String>()) }
-    val openPages = remember { mutableStateOf(setOf<String>()) }
-    // Three panes need room: at fold sizes the sidebar tucks into the drawer while a note is open (like Notion); from 1100dp it always stays.
-    val permanent = layout.widthDp >= 1100 || (layout.permanentSidebar && selected.value == null)
+    // Never three columns: notebooks, stacks and tags live in the drawer on every screen size; unfolded shows the list and the note.
+    val permanent = false
     val twoPane = layout.twoPane
 
     /** Opens a note: beside the list on unfolded screens, full screen on a phone. */
-    val open: (String) -> Unit = { id -> if (twoPane) selected.value = id else nav.navigate("note/$id") }
+    val open: (String) -> Unit = { id ->
+        if (twoPane) {
+            // The list stays beside the note; opened from Home, that list is All notes.
+            if (type == "home") { type = "all"; arg = "-" }
+            selected.value = id
+        } else nav.navigate("note/$id")
+    }
+    // However a note was opened (widget, notification, link), the list beside it on unfolded screens is a real note list.
+    LaunchedEffect(twoPane, selected.value) { if (twoPane && selected.value != null && type == "home") { type = "all"; arg = "-" } }
     /** Sidebar navigation. The drawer finishes closing first, then the screen changes. */
     val go: (String) -> Unit = { route ->
         scope.launch {
@@ -271,16 +277,16 @@ fun HomeScreen(
             }
             DrawerRow("Home", { Icon(Icons.Default.Home, null) }, selected = type == "home") { go("list/home/-") }
             DrawerRow("All notes", { Icon(Icons.AutoMirrored.Filled.Notes, null) }, selected = type == "all") { go("list/all/-") }
-            DrawerRow("Shortcuts", { Icon(Icons.Default.Star, null) }, selected = type == "pinned") { go("list/pinned/-") }
+            DrawerRow("Pinned", { Icon(Icons.Default.Star, null) }, selected = type == "pinned") { go("list/pinned/-") }
             DrawerRow("Tasks", { Icon(Icons.Default.CheckBox, null) }) { go("tasks") }
             DrawerRow("Reminders", { Icon(Icons.Default.Notifications, null) }, selected = type == "reminders") { go("list/reminders/-") }
-            DrawerRow("Graph", { Icon(Icons.Default.Hub, null) }) { go("graph") }
+            DrawerRow(GraphModel.NAME, { Icon(Icons.Default.Hub, null) }) { go("graph") }
             if (s.ai) DrawerRow("Ask AI", { Icon(Icons.Default.AutoAwesome, null) }) { go("ask") }
 
             // Notebooks, grouped into stacks. Long-press any notebook or stack for its actions.
             SectionHeader("Notebooks") {
                 IconButton(onClick = { dialog = HomeDialog.NewNotebook(null) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.Add, "New notebook", Modifier.size(18.dp)) }
-                IconButton(onClick = { dialog = HomeDialog.NewStackFor(null) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.LibraryAdd, "New stack", Modifier.size(18.dp)) }
+                IconButton(onClick = { dialog = HomeDialog.NewStackFor(null) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.LibraryAdd, "New collection", Modifier.size(18.dp)) }
             }
             @Composable
             fun nbRow(nb: NotebookEntity, indent: Int) = DrawerRow(nb.name, { Text(nb.icon ?: "📓") }, selected = type == "nb" && arg == nb.id, indent = indent,
@@ -291,20 +297,13 @@ fun HomeScreen(
                 val isOpen = stack !in closedStacks.value
                 val members = notebooks.filter { it.stack == stack }
                 DrawerRow("$stack  (${members.size})", { Icon(if (isOpen) Icons.Default.FolderOpen else Icons.Default.Folder, null) },
-                    trailing = { IconButton(onClick = { dialog = HomeDialog.StackActions(stack) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.MoreVert, "Stack options", Modifier.size(18.dp)) } },
+                    trailing = { IconButton(onClick = { dialog = HomeDialog.StackActions(stack) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.MoreVert, "Collection options", Modifier.size(18.dp)) } },
                     onLongClick = { dialog = HomeDialog.StackActions(stack) }) {
                     closedStacks.value = if (isOpen) closedStacks.value + stack else closedStacks.value - stack
                 }
                 if (isOpen) members.forEach { nbRow(it, 1) }
             }
             if (notebooks.isEmpty()) DrawerRow("Create a notebook", { Icon(Icons.Default.Add, null) }) { dialog = HomeDialog.NewNotebook(null) }
-
-            // Pages: a tree of pages outside notebooks.
-            SectionHeader("Pages") {
-                IconButton(onClick = { scope.launch { if (drawer.isOpen) drawer.close(); open(repo.createNote(useDefaultNotebook = false)) } }, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.Add, "New page", Modifier.size(18.dp)) }
-            }
-            pages.forEach { p -> PageTreeRow(app, p, 0, openPages, onOpen = { go("note/$it") }) }
-            if (pages.isEmpty()) Text("Pages without a notebook appear here.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
 
             if (tags.isNotEmpty()) {
                 SectionHeader("Tags")
@@ -422,6 +421,8 @@ fun HomeScreen(
                 val left = if (permanent) layout.sidebarWidth + 1.dp else 0.dp
                 val listWidth = layout.hingeDp?.let { (it - left).coerceIn(280.dp, 560.dp) } ?: ((layout.widthDp.dp - left) * 0.4f).coerceIn(300.dp, 440.dp)
                 Box(Modifier.width(listWidth).fillMaxHeight()) { listPane() }
+                val pillState = LocalPill.current
+                DisposableEffect(pillState, listWidth) { pillState?.paneWidth = listWidth; onDispose { pillState?.paneWidth = null } }
                 if (layout.hingeDp == null) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     if (sel != null) key(sel) {
@@ -457,17 +458,17 @@ fun HomeScreen(
             SheetAction("New note here", Icons.Default.Add) { scope.launch { open(repo.createNote(notebookId = d.nb.id)) } },
             SheetAction("Rename", Icons.Default.Edit) { dialog = HomeDialog.RenameNotebook(d.nb) },
             SheetAction("Change icon", Icons.Default.EmojiEmotions) { dialog = HomeDialog.NotebookIcon(d.nb) },
-            SheetAction(if (d.nb.stack == null) "Add to a stack" else "Move to another stack", Icons.Default.Folder) { dialog = HomeDialog.MoveToStack(d.nb) },
+            SheetAction(if (d.nb.stack == null) "Add to a collection" else "Move to another collection", Icons.Default.Folder) { dialog = HomeDialog.MoveToStack(d.nb) },
             d.nb.stack?.let { SheetAction("Remove from “$it”", Icons.Default.RemoveCircleOutline) { scope.launch { repo.setNotebookStack(d.nb.id, null); toast("Removed from $it") } } },
             SheetAction("Delete notebook", Icons.Default.Delete, danger = true) { dialog = HomeDialog.DeleteNotebook(d.nb) },
         )) { if (dialog == d) dialog = null }
 
         is HomeDialog.StackActions -> ActionSheet("📚 ${d.stack}", listOf(
-            SheetAction("New notebook in this stack", Icons.Default.Add) { dialog = HomeDialog.NewNotebook(d.stack) },
+            SheetAction("New notebook in this collection", Icons.Default.Add) { dialog = HomeDialog.NewNotebook(d.stack) },
             SheetAction("Add notebooks…", Icons.Default.LibraryAdd) { dialog = HomeDialog.AddToStack(d.stack) },
             SheetAction("Remove notebooks…", Icons.Default.RemoveCircleOutline) { dialog = HomeDialog.RemoveFromStack(d.stack) },
-            SheetAction("Rename stack", Icons.Default.Edit) { dialog = HomeDialog.RenameStack(d.stack) },
-            SheetAction("Ungroup stack", Icons.Default.FolderOpen, danger = true) { dialog = HomeDialog.UngroupStack(d.stack) },
+            SheetAction("Rename collection", Icons.Default.Edit) { dialog = HomeDialog.RenameStack(d.stack) },
+            SheetAction("Ungroup collection", Icons.Default.FolderOpen, danger = true) { dialog = HomeDialog.UngroupStack(d.stack) },
         )) { if (dialog == d) dialog = null }
 
         is HomeDialog.TagActions -> ActionSheet("#${d.tag.name}", listOf(
@@ -481,7 +482,7 @@ fun HomeScreen(
                 SheetAction("Restore", Icons.Default.Restore) { scope.launch { repo.restore(n.id); toast("Restored") } },
                 SheetAction("Delete forever", Icons.Default.DeleteForever, danger = true) { scope.launch { repo.deleteForever(n.id) } },
             ) else listOf(
-                SheetAction(if (n.pinned) "Remove from shortcuts" else "Add to shortcuts", if (n.pinned) Icons.Default.StarBorder else Icons.Default.Star) { scope.launch { repo.setPinned(n.id, !n.pinned) } },
+                SheetAction(if (n.pinned) "Unpin" else "Pin", if (n.pinned) Icons.Default.StarBorder else Icons.Default.Star) { scope.launch { repo.setPinned(n.id, !n.pinned) } },
                 SheetAction("Move to notebook", Icons.AutoMirrored.Filled.DriveFileMove) { dialog = HomeDialog.MoveNote(n) },
                 SheetAction("Duplicate", Icons.Default.ContentCopy) { scope.launch { repo.duplicate(n.id); toast("Duplicated") } },
                 SheetAction(if (n.isTemplate) "Stop using as template" else "Save as template", Icons.AutoMirrored.Filled.ViewQuilt) { scope.launch { repo.setTemplate(n.id, !n.isTemplate) } },
@@ -493,11 +494,11 @@ fun HomeScreen(
             SheetAction((if (nb.id == d.note.notebookId) "✓ " else "") + nb.name + (nb.stack?.let { "  ·  $it" } ?: ""), emoji = nb.icon ?: "📓") { scope.launch { repo.moveTo(d.note.id, nb.id); toast("Moved to ${nb.name}") } }
         } + SheetAction("No notebook (make it a page)", Icons.Default.Description) { scope.launch { repo.moveTo(d.note.id, null) } }) { if (dialog == d) dialog = null }
 
-        is HomeDialog.MoveToStack -> ActionSheet("Move “${d.nb.name}” to stack", stackNames.filter { it != d.nb.stack }.map { st ->
+        is HomeDialog.MoveToStack -> ActionSheet("Move “${d.nb.name}” to collection", stackNames.filter { it != d.nb.stack }.map { st ->
             SheetAction(st, Icons.Default.Folder) { scope.launch { repo.setNotebookStack(d.nb.id, st); toast("Moved to $st") } }
-        } + SheetAction("New stack…", Icons.Default.LibraryAdd) { dialog = HomeDialog.NewStackFor(d.nb) }) { if (dialog == d) dialog = null }
+        } + SheetAction("New collection…", Icons.Default.LibraryAdd) { dialog = HomeDialog.NewStackFor(d.nb) }) { if (dialog == d) dialog = null }
 
-        is HomeDialog.NewStackFor -> PromptDialog("New stack", label = "Stack name", ok = if (d.nb != null) "Move" else "Next", onDismiss = { if (dialog == d) dialog = null }) { name ->
+        is HomeDialog.NewStackFor -> PromptDialog("New collection", label = "Collection name", ok = if (d.nb != null) "Move" else "Next", onDismiss = { if (dialog == d) dialog = null }) { name ->
             if (d.nb != null) scope.launch { repo.setNotebookStack(d.nb.id, name); toast("Moved to $name") }
             else dialog = HomeDialog.AddToStack(name) // a stack needs notebooks: pick them next
         }
@@ -514,7 +515,7 @@ fun HomeScreen(
         is HomeDialog.RemoveFromStack -> MultiPickDialog("Remove from “${d.stack}”", notebooks.filter { it.stack == d.stack }, label = { "${it.icon ?: "📓"} ${it.name}" },
             ok = "Remove", onDismiss = { if (dialog == d) dialog = null }) { picked -> scope.launch { picked.forEach { repo.setNotebookStack(it.id, null) } } }
 
-        is HomeDialog.RenameStack -> PromptDialog("Rename stack", initial = d.stack, onDismiss = { if (dialog == d) dialog = null }) { name -> scope.launch { repo.renameStack(d.stack, name) } }
+        is HomeDialog.RenameStack -> PromptDialog("Rename collection", initial = d.stack, onDismiss = { if (dialog == d) dialog = null }) { name -> scope.launch { repo.renameStack(d.stack, name) } }
 
         is HomeDialog.UngroupStack -> ConfirmDialog("Ungroup “${d.stack}”?", "Its notebooks are kept and shown on their own.", ok = "Ungroup", onDismiss = { if (dialog == d) dialog = null }) {
             scope.launch { repo.ungroupStack(d.stack) }
@@ -539,28 +540,13 @@ fun HomeScreen(
 @Composable
 private fun EmptyPane(type: String) {
     Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(if (type == "trash") "🗑️" else "🗒️", fontSize = 48.sp)
-        Text("Select a note", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 12.dp))
-        Text("It opens here, beside the list. Ctrl+N makes a new one.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(app.pliopad.R.drawable.brand_mark), null, Modifier.size(56.dp), alpha = 0.35f)
+        Text(if (type == "trash") "Nothing selected" else "Pick a note to open it here", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
+        Text(if (type == "trash") "Tap a note in the trash to restore or delete it." else "Or tap + below to start a new one.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
 const val DEFAULT_DB_SCHEMA = """{"props":[{"id":"status","name":"Status","type":"status","options":[{"id":"todo","name":"Not started","color":"gray"},{"id":"doing","name":"In progress","color":"blue"},{"id":"done","name":"Done","color":"green"}]},{"id":"date","name":"Date","type":"date"},{"id":"owner","name":"Owner","type":"person"}],"views":[{"id":"v1","name":"Table","type":"table"},{"id":"v2","name":"Board","type":"board","group":"status"},{"id":"v3","name":"Calendar","type":"calendar","date":"date"}]}"""
-
-/** A page in the drawer's page tree, with its sub-pages one level deeper. */
-@Composable
-private fun PageTreeRow(app: PliopadApp, p: NoteEntity, depth: Int, open: androidx.compose.runtime.MutableState<Set<String>>, onOpen: (String) -> Unit) {
-    val children by app.dao.children(p.id).collectAsState(initial = emptyList())
-    val kids = if (p.kind == "db") emptyList() else children
-    val isOpen = p.id in open.value
-    DrawerRow(p.title.ifBlank { "Untitled" }, { Text(p.icon ?: if (p.kind == "db") "▦" else "📄") }, indent = depth,
-        trailing = if (kids.isNotEmpty()) ({
-            IconButton(onClick = { open.value = if (isOpen) open.value - p.id else open.value + p.id }, modifier = Modifier.size(32.dp)) {
-                Icon(if (isOpen) Icons.Default.ExpandMore else Icons.Default.ChevronRight, if (isOpen) "Collapse" else "Expand", Modifier.size(18.dp))
-            }
-        }) else null) { onOpen(p.id) }
-    if (isOpen) kids.forEach { PageTreeRow(app, it, depth + 1, open, onOpen) }
-}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

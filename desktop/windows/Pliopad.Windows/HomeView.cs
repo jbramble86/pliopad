@@ -16,10 +16,12 @@ public sealed class HomeView : ScrollPage, IRefreshable
     private int _colCount;
     private TextBox? _scratch;
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _scratchTimer;
-    public const string ScratchTitle = "Scratch pad";
+    public const string ScratchTitle = "Quick jot";
+    /// <summary>Quick jot notes created before the rename are still found.</summary>
+    private static bool IsScratch(Note n) => n.Title is ScratchTitle or "Scratch pad";
 
     private static readonly (string Key, string Label)[] All =
-        [("recent", "Recently visited"), ("scratch", "Scratch pad"), ("tasks", "Tasks"), ("shortcuts", "Shortcuts"), ("reminders", "Reminders"), ("notebooks", "Notebooks"), ("updated", "Recently edited")];
+        [("recent", "Jump back in"), ("scratch", "Quick jot"), ("tasks", "Tasks"), ("shortcuts", "Pinned"), ("reminders", "Reminders"), ("notebooks", "Notebooks"), ("updated", "Recently edited")];
 
     public HomeView(MainWindow main)
     {
@@ -52,7 +54,7 @@ public sealed class HomeView : ScrollPage, IRefreshable
         var head = new Grid();
         head.ColumnDefinitions.Add(new ColumnDefinition());
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        head.Children.Add(V(2, T(DateTime.Now.ToString("dddd, MMMM d"), 13, "PMuted"), T($"{Greeting()}{(name.Length > 0 ? ", " + name : "")}", 32, bold: true)));
+        head.Children.Add(V(2, T(DateTime.Now.ToString("dddd, MMMM d"), 13, "PMuted"), T(name.Length > 0 ? $"Hi {name}, here's your day" : "Here's your day", 32, bold: true)));
         var custom = IconButton("", () => _ = Customize(), "Customize Home");
         custom.VerticalAlignment = VerticalAlignment.Bottom;
         Grid.SetColumn(custom, 1);
@@ -81,14 +83,14 @@ public sealed class HomeView : ScrollPage, IRefreshable
         if (R.AiEnabled) Q("✨", "Ask AI", () => _main.Navigate(new Route("ask")));
         page.Children.Add(quick);
 
-        if (!hidden.Contains("recent")) page.Children.Add(Widget("Recently visited", "", RecentCards(notes)));
+        if (!hidden.Contains("recent")) page.Children.Add(Widget("Jump back in", "", RecentCards(notes)));
 
         _widgets.Clear();
         var widgets = new Dictionary<string, Func<FrameworkElement>>
         {
-            ["scratch"] = () => Widget("Scratch pad", "", ScratchPad(notes), Flat(T("Open as page", 12, "PMuted"), OpenScratch, pad: 4)),
+            ["scratch"] = () => Widget("Quick jot", "", ScratchPad(notes), Flat(T("Open as page", 12, "PMuted"), OpenScratch, pad: 4)),
             ["tasks"] = () => Widget("Tasks", "", Tasks(), Flat(T("All", 12, "PMuted"), () => _main.Navigate(new Route("tasks")), pad: 4)),
-            ["shortcuts"] = () => Widget("Shortcuts", "", NoteRows(notes.Where(n => n.Pinned).ToList(), _ => null, "Star a note to pin it here.")),
+            ["shortcuts"] = () => Widget("Pinned", "", NoteRows(notes.Where(n => n.Pinned).ToList(), _ => null, "Pin a note to keep it here.")),
             ["reminders"] = () => Widget("Reminders", "", NoteRows(notes.Where(n => n.ReminderAt != null && !n.ReminderDone).OrderBy(n => n.ReminderAt).Take(6).ToList(), n => LocalTime(n.ReminderAt!.Value), "No upcoming reminders.")),
             ["notebooks"] = () => Widget("Notebooks", "", Notebooks(notes)),
             ["updated"] = () => Widget("Recently edited", "", NoteRows(notes.Take(8).ToList(), n => RelTime(n.UpdatedAt) + (R.Notebooks().FirstOrDefault(x => x.Id == n.NotebookId) is { } nb ? " · " + nb.Name : ""), "Nothing yet.")),
@@ -226,11 +228,11 @@ public sealed class HomeView : ScrollPage, IRefreshable
 
     // ---- scratch pad: a real note, so it syncs to the phone and the web ----
 
-    private string? ScratchId() => R.Notes().FirstOrDefault(n => n.Title == ScratchTitle)?.Id;
+    private string? ScratchId() => R.Notes().FirstOrDefault(IsScratch)?.Id;
 
     private UIElement ScratchPad(List<Note> notes)
     {
-        var n = notes.FirstOrDefault(x => x.Title == ScratchTitle);
+        var n = notes.FirstOrDefault(IsScratch);
         _scratch = new TextBox
         {
             AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 150, MaxHeight = 340, PlaceholderText = "Jot something down…  It saves as you type and syncs to your phone.",

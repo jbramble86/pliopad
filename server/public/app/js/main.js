@@ -80,10 +80,10 @@ async function route() {
     if (type === 'graph') return graphPage(main);
     return settingsPage(main, arg || 'general');
   }
-  const spec = type ? { type, arg } : noteId ? null : { type: 'all' };
-  if (spec && (!listSpec || spec.type !== listSpec.type || spec.arg !== listSpec.arg)) { listSpec = spec; await renderList(); }
-  if (!spec) listSpec = null;
-  setMode(spec ? 'list' : 'page', noteId);
+  // The note list always stays beside an open note: a note opened from Home or a link keeps the last list (or All notes).
+  const spec = type ? { type, arg } : listSpec || { type: 'all' };
+  if (!listSpec || spec.type !== listSpec.type || spec.arg !== listSpec.arg) { listSpec = spec; await renderList(); }
+  setMode('list', noteId);
   renderSidebar();
   if (noteId) {
     shell.list.querySelectorAll('.note-card').forEach((c) => c.classList.toggle('active', c.dataset.id === noteId));
@@ -93,7 +93,7 @@ async function route() {
     shell.main.replaceChildren(h('div', { class: 'topbar' }, h('button', { class: 'btn icon mobile-only', onclick: () => setPane('side') }, icon('menu'))),
       h('div', { class: 'empty', style: { marginTop: '12vh' } }, h('div', { class: 'big' }, '🗒️'), h('div', {}, 'Select a note, or'),
         canWrite() ? h('div', { style: { marginTop: '12px' } }, h('button', { class: 'btn primary', onclick: () => newInContext() }, icon('plus'), 'New note')) : null,
-        h('p', { class: 'muted', style: { marginTop: '18px', fontSize: '13px' } }, h('kbd', {}, 'Ctrl'), ' + ', h('kbd', {}, 'K'), ' to search · ', h('kbd', {}, 'Alt'), ' + ', h('kbd', {}, 'N'), ' for a quick note')));
+        h('p', { class: 'muted kbd-hint', style: { marginTop: '18px', fontSize: '13px' } }, h('kbd', {}, 'Ctrl'), ' + ', h('kbd', {}, 'K'), ' to search · ', h('kbd', {}, 'Alt'), ' + ', h('kbd', {}, 'N'), ' for a quick note')));
   }
 }
 
@@ -164,17 +164,17 @@ function renderSidebar() {
   scroll.append(h('div', { class: 'nav-sec', style: { marginTop: '4px' } },
     navItem({ ico: 'home', label: 'Home', href: base + '/home', active: is('/home') }),
     navItem({ ico: 'note', label: 'All notes', href: base + '/all', active: is('/all') }),
-    navItem({ ico: 'star', label: 'Shortcuts', href: base + '/pinned', active: is('/pinned'), count: live.filter((n) => n.pinned).length || null }),
+    navItem({ ico: 'star', label: 'Pinned', href: base + '/pinned', active: is('/pinned'), count: live.filter((n) => n.pinned).length || null }),
     navItem({ ico: 'checksq', label: 'Tasks', href: base + '/tasks', active: is('/tasks') }),
     navItem({ ico: 'bell', label: 'Reminders', href: base + '/reminders', active: is('/reminders'), count: dueReminders || null }),
     state.me.ai ? navItem({ ico: 'sparkles', label: 'Ask AI', href: base + '/ask', active: is('/ask') }) : null,
-    navItem({ ico: 'graph', label: 'Graph', href: base + '/graph', active: is('/graph') })));
+    navItem({ ico: 'graph', label: 'PlioSphere', href: base + '/graph', active: is('/graph') })));
 
   // Notebooks, grouped into stacks.
   const nbSec = h('div', { class: 'nav-sec' }, h('div', { class: 'nav-head' }, 'Notebooks',
-    canWrite() ? h('button', { class: 'btn icon', style: { width: '20px', height: '20px' }, title: 'New notebook or stack', onclick: (e) => popMenu(e.currentTarget, [
+    canWrite() ? h('button', { class: 'btn icon', style: { width: '20px', height: '20px' }, title: 'New notebook or collection', onclick: (e) => popMenu(e.currentTarget, [
       { label: 'New notebook', icon: 'book', run: () => newNotebook() },
-      { label: 'New stack…', icon: 'list', run: newStack },
+      { label: 'New collection…', icon: 'list', run: newStack },
     ]) }, icon('plus')) : null));
   const stacks = {};
   for (const nb of b.notebooks) (stacks[nb.stack || ''] ||= []).push(nb);
@@ -201,7 +201,7 @@ function renderSidebar() {
     const key = 'stack:' + stack;
     const isOpen = !closed.has(key);
     const row = navItem({ ico: h('span', { class: 'twisty' + (isOpen ? ' open' : '') }, icon('chevron')), label: stack, onclick: () => toggleStack(key), count,
-      extra: canWrite() ? [rowBtn('plus', `New notebook in ${stack}`, () => newNotebook(stack)), rowBtn('more', 'Stack options', (a) => stackMenu(a, stack))] : null });
+      extra: canWrite() ? [rowBtn('plus', `New notebook in ${stack}`, () => newNotebook(stack)), rowBtn('more', 'Collection options', (a) => stackMenu(a, stack))] : null });
     if (canWrite()) {
       row.addEventListener('contextmenu', (e) => { e.preventDefault(); stackMenu(null, stack, e); });
       row.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('text/x-pliopad-notebook')) { e.preventDefault(); row.classList.add('drop'); } });
@@ -226,30 +226,6 @@ function renderSidebar() {
   }
   scroll.append(nbSec);
 
-  // Pages: Notion-style tree of pages outside notebooks.
-  const pagesSec = h('div', { class: 'nav-sec' }, h('div', { class: 'nav-head' }, 'Pages',
-    canWrite() ? h('button', { class: 'btn icon', style: { width: '20px', height: '20px' }, title: 'New page', onclick: () => createNote({ notebook_id: null }) }, icon('plus')) : null));
-  const kids = (pid) => live.filter((n) => n.parent_id === pid && !n.is_template).sort((a, c) => a.sort - c.sort || a.updated_at - c.updated_at);
-  const curId = (/\/n\/([0-9a-f-]{36})/.exec(h0) || [])[1];
-  const treeItem = (n, depth) => {
-    const children = noteMeta(n.id)?.kind === 'db' ? [] : kids(n.id);
-    const key = 'p:' + n.id;
-    const it = navItem({ ico: n.icon || (n.kind === 'db' ? '▦' : '📄'), label: n.title || 'Untitled', href: `${base}/n/${n.id}`, active: curId === n.id,
-      extra: canWrite() ? h('button', { class: 'btn icon hover-btn', style: { width: '22px', height: '22px' }, title: 'Add a page inside',
-        onclick: (e) => { e.preventDefault(); e.stopPropagation(); open.add(key); store.set('open', [...open]); createNote({ parent_id: n.id, notebook_id: null }); } }, icon('plus')) : null,
-      drop: (id) => id !== n.id && moveNote(id, { parent_id: n.id, notebook_id: null }) });
-    it.style.paddingLeft = 8 + depth * 14 + 'px';
-    it.prepend(h('span', { class: 'twisty' + (open.has(key) ? ' open' : ''), style: { visibility: children.length ? 'visible' : 'hidden' },
-      onclick: (e) => { e.preventDefault(); e.stopPropagation(); toggle(key); } }, icon('chevron')));
-    it.draggable = true;
-    it.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/x-pliopad-note', n.id));
-    pagesSec.append(it);
-    if (open.has(key)) children.forEach((c) => treeItem(c, depth + 1));
-  };
-  const topPages = live.filter((n) => !n.notebook_id && !n.parent_id && !n.is_template);
-  topPages.forEach((n) => treeItem(n, 0));
-  if (!topPages.length) pagesSec.append(h('div', { class: 'muted', style: { padding: '2px 8px', fontSize: '12px' } }, 'Pages without a notebook appear here.'));
-  scroll.append(pagesSec);
 
   if (b.tags.length) {
     const tagSec = h('div', { class: 'nav-sec' }, h('div', { class: 'nav-head' }, 'Tags'));
@@ -394,7 +370,7 @@ async function setNotebookStack(id, stack) {
   if (!nb || (nb.stack || null) === (stack || null)) return;
   try {
     Object.assign(nb, await wsApi('PUT', `/notebooks/${id}`, { stack: stack || null }));
-    toast(stack ? `Moved “${nb.name}” to ${stack}` : `Removed “${nb.name}” from its stack`);
+    toast(stack ? `Moved “${nb.name}” to ${stack}` : `Removed “${nb.name}” from its collection`);
     renderSidebar();
   } catch (e) { toast(e.message, { error: true }); }
 }
@@ -415,9 +391,9 @@ function pickNotebooks(title, candidates, okLabel) {
 }
 
 async function newStack() {
-  const name = await promptBox('New stack', { label: 'Stack name', placeholder: 'Work', ok: 'Next' });
+  const name = await promptBox('New collection', { label: 'Collection name', placeholder: 'Work', ok: 'Next' });
   if (!name) return;
-  const picked = await pickNotebooks(`Add notebooks to “${name}”`, state.boot.notebooks, 'Create stack');
+  const picked = await pickNotebooks(`Add notebooks to “${name}”`, state.boot.notebooks, 'Create collection');
   if (!picked) return;
   if (!picked.length) {
     // A stack needs a notebook in it; offer to create the first one.
@@ -430,7 +406,7 @@ function stackMenu(anchor, stack, ev) {
   const members = state.boot.notebooks.filter((n) => n.stack === stack);
   popMenu(anchor, [
     { head: stack },
-    { label: 'New notebook in this stack', icon: 'plus', run: () => newNotebook(stack) },
+    { label: 'New notebook in this collection', icon: 'plus', run: () => newNotebook(stack) },
     { label: 'Add notebooks…', icon: 'book', run: async () => {
       const picked = await pickNotebooks(`Add notebooks to “${stack}”`, state.boot.notebooks.filter((n) => n.stack !== stack), 'Add');
       for (const nb of picked || []) await setNotebookStack(nb.id, stack);
@@ -439,14 +415,14 @@ function stackMenu(anchor, stack, ev) {
       const picked = await pickNotebooks(`Remove notebooks from “${stack}”`, members, 'Remove');
       for (const nb of picked || []) await setNotebookStack(nb.id, null);
     } },
-    { label: 'Rename stack', icon: 'note', run: async () => {
-      const name = await promptBox('Rename stack', { value: stack, ok: 'Rename' });
+    { label: 'Rename collection', icon: 'note', run: async () => {
+      const name = await promptBox('Rename collection', { value: stack, ok: 'Rename' });
       if (!name || name === stack) return;
       for (const nb of members) await setNotebookStack(nb.id, name);
     } },
     '-',
-    { label: 'Ungroup stack', icon: 'trash', danger: true, run: async () => {
-      if (!(await confirmBox('Ungroup stack?', `The ${members.length} notebook${members.length === 1 ? '' : 's'} in “${stack}” are kept and shown on their own.`, { ok: 'Ungroup' }))) return;
+    { label: 'Ungroup collection', icon: 'trash', danger: true, run: async () => {
+      if (!(await confirmBox('Ungroup collection?', `The ${members.length} notebook${members.length === 1 ? '' : 's'} in “${stack}” are kept and shown on their own.`, { ok: 'Ungroup' }))) return;
       for (const nb of members) await setNotebookStack(nb.id, null);
     } },
   ], ev ? { x: ev.clientX, y: ev.clientY } : {});
@@ -460,11 +436,11 @@ function notebookMenu(anchor, nb, ev) {
     '-',
     { label: 'Rename', icon: 'note', run: async () => { const n = await promptBox('Rename notebook', { value: nb.name }); if (n) upd({ name: n }); } },
     { label: 'Change icon', icon: 'star', run: () => import('./ui.js').then(({ emojiPicker }) => emojiPicker(anchor || document.querySelector('.side-scroll'), (e) => upd({ icon: e || '📓' }))) },
-    { label: 'Move to stack', icon: 'list', sub: [
+    { label: 'Move to collection', icon: 'list', sub: [
       ...stacks.map((s) => ({ label: s, run: () => setNotebookStack(nb.id, s) })),
       stacks.length ? '-' : null,
-      { label: 'New stack…', icon: 'plus', run: async () => { const s = await promptBox('New stack', { label: 'Stack name', placeholder: 'Work', ok: 'Move' }); if (s) setNotebookStack(nb.id, s); } },
-      nb.stack ? { label: 'Remove from stack', icon: 'x', run: () => setNotebookStack(nb.id, null) } : null,
+      { label: 'New collection…', icon: 'plus', run: async () => { const s = await promptBox('New collection', { label: 'Collection name', placeholder: 'Work', ok: 'Move' }); if (s) setNotebookStack(nb.id, s); } },
+      nb.stack ? { label: 'Remove from collection', icon: 'x', run: () => setNotebookStack(nb.id, null) } : null,
     ] },
     '-',
     { label: 'Delete notebook', icon: 'trash', danger: true, run: async () => {
@@ -485,7 +461,7 @@ function tagMenu(anchor, t) {
 }
 
 // ---------- Note list ----------
-const LIST_TITLES = { all: ['All notes', 'note'], pinned: ['Shortcuts', 'star'], reminders: ['Reminders', 'bell'], trash: ['Trash', 'trash'], templates: ['Templates', 'template'], shared: ['Published pages', 'globe'] };
+const LIST_TITLES = { all: ['All notes', 'note'], pinned: ['Pinned', 'star'], reminders: ['Reminders', 'bell'], trash: ['Trash', 'trash'], templates: ['Templates', 'template'], shared: ['Published pages', 'globe'] };
 
 export async function renderList() {
   if (!shell || !listSpec) return;
@@ -524,7 +500,7 @@ export async function renderList() {
   shell.list.querySelector('.count').textContent = `${notes.length} note${notes.length === 1 ? '' : 's'}`;
   if (!notes.length) {
     scroll.replaceChildren(h('div', { class: 'empty' }, h('div', { class: 'big' }, { trash: '🗑️', pinned: '⭐', reminders: '⏰', templates: '🧩', shared: '🌐' }[s.type] || '📝'),
-      { trash: 'Trash is empty.', pinned: 'Star a note to add it to your shortcuts.', reminders: 'No reminders. Add one from a note’s ⋯ menu.',
+      { trash: 'Trash is empty.', pinned: 'Pin a note to keep it here.', reminders: 'No reminders. Add one from a note’s ⋯ menu.',
         templates: 'Save any page as a template from its ⋯ menu.', shared: 'Nothing is published yet. Use Share → Publish on any page.' }[s.type] || 'No notes here yet.'));
     return;
   }
@@ -610,7 +586,7 @@ export function palette() {
     canWrite() && { t: "Today's daily note", s: 'Alt+D', ico: '📅', run: dailyNote },
     { t: 'Tasks across all notes', ico: '☑', run: () => go(base + '/tasks') },
     state.me.ai && { t: 'Ask AI about your notes', ico: '✨', run: () => go(base + '/ask') },
-    { t: 'Graph view', ico: '🕸', run: () => go(base + '/graph') },
+    { t: 'PlioSphere', ico: '🪐', run: () => go(base + '/graph') },
     { t: 'Settings', ico: '⚙️', run: () => go(base + '/settings/general') },
     { t: 'Toggle dark mode', ico: '🌓', run: () => { const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); store.set('theme', cur === 'dark' ? 'light' : 'dark'); applyTheme(); } },
   ].filter(Boolean);

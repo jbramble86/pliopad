@@ -32,11 +32,36 @@ export async function api(method, path, body) {
   }
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && data.code === 'auth') onUnauthorized();
+  if (res.status === 503 && data.code === 'maintenance') showMaintenance(data.error, data.until);
   if (!res.ok) throw new ApiError(res.status, data.error || `Request failed (${res.status})`, data.code);
   return data;
 }
 
 export const wsApi = (method, path, body) => api(method, `/w/${state.wsId}${path}`, body);
+
+/**
+ * Maintenance mode: a full-screen notice over the app. It checks every 30 seconds and reloads when PlioPad is back,
+ * so nobody has to keep refreshing. (Platform admins never see it; the server lets them through.)
+ */
+let maintenanceShown = false;
+export function showMaintenance(message, until) {
+  if (maintenanceShown) return;
+  maintenanceShown = true;
+  const el = document.createElement('div');
+  el.className = 'maintenance';
+  const when = until ? new Date(until).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : null;
+  el.innerHTML = '<div class="maintenance-card"><img src="/brand/PlioPad-desktop.svg" alt=""><h1>We\x27ll be right back</h1><p class="lead"></p><p class="msg"></p><p class="until"></p><p class="small">This page reloads by itself when PlioPad is back.</p></div>';
+  el.querySelector('.lead').textContent = 'PlioPad is down for scheduled maintenance. Your notes are safe.';
+  if (message && !message.startsWith('PlioPad is down for maintenance')) el.querySelector('.msg').textContent = message; else el.querySelector('.msg').remove();
+  if (when) el.querySelector('.until').textContent = 'Expected back ' + when; else el.querySelector('.until').remove();
+  document.body.append(el);
+  const check = setInterval(async () => {
+    try {
+      const info = await (await fetch('/api/site-info', { cache: 'no-store' })).json();
+      if (!info.maintenance?.on) { clearInterval(check); location.reload(); }
+    } catch { /* still down */ }
+  }, 30000);
+}
 
 export async function upload(file, noteId) {
   const fd = new FormData();

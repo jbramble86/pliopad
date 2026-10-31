@@ -10,6 +10,7 @@ import { stripeEnabled } from '../stripe.js';
 import { wsOut, deleteWorkspace, auditQuery, storageDir } from './workspace.js';
 import path from 'node:path';
 import { downloadsDir, appBuilds } from '../server.js';
+import * as M from '../maintenance.js';
 import { ApiError, nowMs, month, setting, setSetting, jdec, jenc, VERSION, resetMailTransport, ROOT, DATA_DIR, CONFIG_FILE } from '../util.js';
 
 const page = (ctx) => {
@@ -241,4 +242,28 @@ route('GET', '/api/admin/system', async (ctx) => {
     downloads_dir: downloadsDir(), downloads: appBuilds().map((a) => ({ name: a.name, file: a.file, version: a.version })),
     config_in_app: CONFIG_FILE.startsWith(ROOT + path.sep),
   };
+});
+
+// ---------- Maintenance ----------
+
+route('GET', '/api/admin/maintenance', async (ctx) => {
+  await A.requireSuper(ctx);
+  return M.overview();
+});
+
+route('POST', '/api/admin/maintenance/mode', async (ctx) => {
+  const u = await A.requireSuper(ctx);
+  const on = !!ctx.in('on');
+  await M.setMode(on, { message: ctx.in('message', ''), until: ctx.in('until', null) }, u);
+  await A.audit(ctx, null, on ? 'maintenance.on' : 'maintenance.off', String(ctx.in('message', '') || ''));
+  return M.overview();
+});
+
+route('POST', '/api/admin/maintenance/run', async (ctx) => {
+  await A.requireSuper(ctx);
+  const id = String(ctx.req_('task'));
+  if (!M.TASKS.some((t) => t.id === id)) throw new ApiError(404, 'Unknown maintenance task.');
+  const result = await M.runTask(id);
+  await A.audit(ctx, null, 'maintenance.run', id, { ok: result.ok, message: result.message });
+  return { result, ...M.overview() };
 });

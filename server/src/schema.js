@@ -1,8 +1,9 @@
 // Database schema, written once in a portable dialect and adapted to MySQL or SQLite. Safe to run on every start.
 import { db } from './db.js';
-import { setSetting } from './util.js';
+import { setSetting, jdec } from './util.js';
+import { fileOrphanPages } from './notes.js';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const TABLES = {
   settings: 'k VARCHAR(100) PRIMARY KEY, v {TEXT}',
@@ -80,5 +81,9 @@ export async function migrate() {
       } catch { /* MySQL has no IF NOT EXISTS for indexes; an existing one is fine */ }
     }
   }
+  // Version 2: every page belongs to a notebook.
+  // Read straight from the table: settings are loaded into memory only after migrating.
+  const before = Number(jdec(await db.val('SELECT v FROM settings WHERE k=?', ['schema_version']), 0)) || 0;
+  if (before < 2) await fileOrphanPages();
   await setSetting(db, 'schema_version', SCHEMA_VERSION);
 }

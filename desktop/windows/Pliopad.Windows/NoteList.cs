@@ -34,11 +34,11 @@ public sealed partial class MainWindow
                 return (nb?.Name ?? "Notebook", nb?.Icon ?? "📓", Sorted(top.Where(n => n.NotebookId == Route.Arg)).ToList());
             case "stack":
                 var ids = nbs.Where(x => x.Stack == Route.Arg).Select(x => x.Id).ToHashSet();
-                return (Route.Arg ?? "Stack", "📚", Sorted(top.Where(n => n.NotebookId != null && ids.Contains(n.NotebookId))).ToList());
+                return (Route.Arg ?? "Collection", "📚", Sorted(top.Where(n => n.NotebookId != null && ids.Contains(n.NotebookId))).ToList());
             case "tag":
                 var tag = R.Tags().FirstOrDefault(t => t.Id == Route.Arg);
                 return ("#" + (tag?.Name ?? "tag"), "#", Sorted(top.Where(n => n.TagIds.Contains(Route.Arg!))).ToList());
-            case "pinned": return ("Shortcuts", "⭐", Sorted(top.Where(n => n.Pinned)).ToList());
+            case "pinned": return ("Pinned", "⭐", Sorted(top.Where(n => n.Pinned)).ToList());
             case "trash": return ("Trash", "🗑️", R.Store.Trash(R.WsId));
             case "templates": return ("Templates", "🧩", R.Store.Templates(R.WsId));
             case "search": return ("Search", "🔎", string.IsNullOrWhiteSpace(Route.Arg) ? [] : R.Search(Route.Arg));
@@ -187,7 +187,7 @@ public sealed partial class MainWindow
         var canWrite = R.CanWrite;
         return Menu(
             forList ? Item("Open in new window", () => NoteWindow.Open(n.Id), "") : null,
-            canWrite ? Item(n.Pinned ? "Remove from shortcuts" : "Add to shortcuts", () => R.SetPinned(n.Id, !n.Pinned), "") : null,
+            canWrite ? Item(n.Pinned ? "Unpin" : "Pin", () => R.SetPinned(n.Id, !n.Pinned), "") : null,
             canWrite ? move : null,
             canWrite ? Item("Duplicate", () => { if (R.Duplicate(n.Id) is { } id) OpenNote(id); }, "") : null,
             canWrite && n.IsTemplate ? Item("New note from template", () => { if (R.Duplicate(n.Id, fromTemplate: true) is { } id) { R.SetTemplate(id, false); OpenNote(id); } }, "") : null,

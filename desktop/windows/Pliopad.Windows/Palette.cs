@@ -23,6 +23,7 @@ public sealed partial class MainWindow : INoteHost
         ("🏡", "Go to Home", "Ctrl+1", () => Navigate(new Route("home"))),
         ("☑️", "Go to Tasks", "Ctrl+2", () => Navigate(new Route("tasks"))),
         ("📄", "Go to All notes", "Ctrl+3", () => Navigate(new Route("all"))),
+        ("🪐", "Open PlioSphere", "Ctrl+4", () => Navigate(new Route("sphere"))),
         ("🔎", "Full search with filters", "Ctrl+Shift+F", () => Navigate(new Route("search", ""))),
         ("🗑️", "Go to Trash", null, () => Navigate(new Route("trash"))),
         ("🔄", "Sync now", "F5", () => _ = R.SyncNow()),

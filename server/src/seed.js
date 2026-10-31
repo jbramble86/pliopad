@@ -15,8 +15,8 @@ export async function createWorkspace(user, name) {
   return db.one('SELECT * FROM workspaces WHERE id=?', [id]);
 }
 
-const WELCOME = `## Notes and docs in one place
-Pliopad mixes **Evernote-style notebooks** (fast capture, tags, a note list) with **Notion-style pages** (nested pages, blocks and databases).
+const WELCOME = `## Everything you know, connected
+PlioPad keeps **quick notes**, **pages** and **databases** together, and maps how they link in **PlioSphere**.
 ### Try these
 - [ ] Type \`/\` on an empty line to insert any block
 - [ ] Type \`[[\` to link to another page; backlinks appear automatically
@@ -24,7 +24,7 @@ Pliopad mixes **Evernote-style notebooks** (fast capture, tags, a note list) wit
 - [ ] Search like a pro: \`tag:getting-started is:todo updated:7d\`
 - [ ] Open the Android app and scan a document; its text becomes searchable
 - [ ] Click ✨ in the toolbar to summarize a note or pull out action items
-> Tip: everything syncs both ways with the Android app, including edits made offline.`;
+> Tip: everything syncs between the web, Windows and Android apps, including edits made offline.`;
 
 async function starterContent(ws, user) {
   const inbox = uuid();
@@ -35,7 +35,7 @@ async function starterContent(ws, user) {
   const tag = uuid();
   await db.insert('tags', { id: tag, workspace_id: ws.id, name: 'getting-started', color: '#6366f1', seq: await nextSeq(ws.id), updated_at: nowMs() });
 
-  await saveNote(ws, user, uuid(), { title: 'Welcome to Pliopad', icon: '👋', notebook_id: inbox, pinned: true, tags: [tag], content: Blocks.fromMarkdown(WELCOME) });
+  await saveNote(ws, user, uuid(), { title: 'Welcome to PlioPad', icon: '👋', notebook_id: inbox, pinned: true, tags: [tag], content: Blocks.fromMarkdown(WELCOME) });
 
   const dbId = uuid();
   const options = [{ id: 'todo', name: 'To do', color: 'gray' }, { id: 'doing', name: 'In progress', color: 'blue' }, { id: 'done', name: 'Done', color: 'green' }];

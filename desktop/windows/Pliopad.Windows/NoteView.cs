@@ -44,6 +44,10 @@ public sealed class NoteView : Grid
         Children.Add(_bar);
         SetRow(_scroll, 1);
         Children.Add(_scroll);
+        // A click on blank space anywhere around the page (margins, below the last line) starts typing at the end.
+        // Text, buttons and links handle their own clicks, so only clicks on empty space get here.
+        _scroll.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        _scroll.Tapped += (_, e) => { if (!e.Handled && !ReadOnly) { e.Handled = true; _editor.ClickBelow(); } };
 
         _saveTimer = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread().CreateTimer();
         _saveTimer.Interval = TimeSpan.FromMilliseconds(500);
@@ -165,7 +169,7 @@ public sealed class NoteView : Grid
         if (R.CanWrite && _note.TrashedAt == null)
         {
             actions.Children.Add(Flat(T("Share", 13), () => _ = Share(), "Publish to the web", 8));
-            actions.Children.Add(IconButton(_note.Pinned ? "" : "", () => { R.SetPinned(NoteId, !_note.Pinned); _note.Pinned = !_note.Pinned; BuildBar(); }, _note.Pinned ? "Remove from shortcuts" : "Add to shortcuts"));
+            actions.Children.Add(IconButton(_note.Pinned ? "" : "", () => { R.SetPinned(NoteId, !_note.Pinned); _note.Pinned = !_note.Pinned; BuildBar(); }, _note.Pinned ? "Unpin" : "Pin"));
             var comments = IconButton("", () => _ = ShowComments(), "Comments");
             actions.Children.Add(comments);
             if (R.AiEnabled)
@@ -182,6 +186,7 @@ public sealed class NoteView : Grid
             menu.Items.Insert(0, Item("Version history", () => _ = ShowHistory(), ""));
             if (R.CanWrite)
             {
+                menu.Items.Insert(0, Item("Change created date", () => _ = EditCreated(), ""));
                 menu.Items.Insert(0, Item(_note.ReminderAt != null && !_note.ReminderDone ? "Change reminder" : "Set reminder", () => _ = SetReminder(), ""));
                 menu.Items.Insert(0, Item(_note.Locked ? "Unlock page" : "Lock page", () => { R.Update(NoteId, n => n.Locked = !n.Locked); Build(); }, ""));
             }
@@ -279,6 +284,18 @@ public sealed class NoteView : Grid
         if (r != ContentDialogResult.Primary || date.Date is not { } d) return;
         var when = d.Date + time.Time;
         R.SetReminder(NoteId, new DateTimeOffset(when).ToUnixTimeMilliseconds());
+    }
+
+/// <summary>Lets the user set when the note was created (not in the future).</summary>
+    private async Task EditCreated()
+    {
+        var start = DateTimeOffset.FromUnixTimeMilliseconds(_note.CreatedAt).LocalDateTime;
+        var date = new CalendarDatePicker { Date = start.Date, Header = "Date", MaxDate = DateTimeOffset.Now };
+        var time = new TimePicker { Time = start.TimeOfDay, Header = "Time", MinuteIncrement = 1 };
+        var dlg = new ContentDialog { XamlRoot = _host.Root, Title = "Created on", Content = V(12, date, time), PrimaryButtonText = "Save", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary };
+        if (await dlg.ShowAsync() != ContentDialogResult.Primary || date.Date is not { } d) return;
+        var ms = Math.Min(new DateTimeOffset(d.Date + time.Time).ToUnixTimeMilliseconds(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        R.Update(NoteId, n => n.CreatedAt = ms);
     }
 
     // ---- editor plumbing ----

@@ -88,6 +88,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -109,6 +111,7 @@ import app.pliopad.MainActivity
 import app.pliopad.core.Block
 import app.pliopad.core.Blocks
 import app.pliopad.data.ApiException
+import app.pliopad.work.Maintenance
 import app.pliopad.data.NoteEntity
 import app.pliopad.data.SessionData
 import app.pliopad.scan.Scanner
@@ -274,7 +277,7 @@ private fun MainNav(activity: MainActivity, app: PliopadApp, s: SessionData) {
         nav.navigate(r) { popUpTo(nav.graph.findStartDestination().id) { inclusive = r == "list/home/-" }; launchSingleTop = true }
     }
     Box(Modifier.fillMaxSize().nestedScroll(pill.scroll)) {
-    CompositionLocalProvider(LocalPill provides (if (twoPane) null else pill)) {
+    CompositionLocalProvider(LocalPill provides pill) {
     // Short, simple transitions: the default cross-fade felt sluggish.
     NavHost(nav, startDestination = "list/home/-",
         enterTransition = { fadeIn(tween(160)) + slideInHorizontally(tween(200)) { it / 12 } },
@@ -296,7 +299,7 @@ private fun MainNav(activity: MainActivity, app: PliopadApp, s: SessionData) {
     }
     }
     PillNav(
-        visible = !twoPane && (route == "list/{type}/{arg}" || route == "tasks") && !pill.scrolledAway && !pill.drawerOpen,
+        visible = (route == "list/{type}/{arg}" || route == "tasks") && !pill.scrolledAway && !pill.drawerOpen,
         current = when { route == "tasks" -> PillTab.Tasks; listType == "home" -> PillTab.Home; listType != null -> PillTab.Notes; else -> PillTab.None },
         onHome = { goTop("list/home/-") },
         onNotes = { goTop("list/all/-") },
@@ -304,8 +307,23 @@ private fun MainNav(activity: MainActivity, app: PliopadApp, s: SessionData) {
         onNewMenu = pill.onNewMenu,
         onTasks = { goTop("tasks") },
         onSearch = { nav.navigate("search") },
-        modifier = Modifier.align(Alignment.BottomCenter),
+        modifier = Modifier.align(Alignment.BottomStart).then(pill.paneWidth?.let { Modifier.width(it) } ?: Modifier.fillMaxWidth()),
     )
+    val maintenance by Maintenance.notice.collectAsState()
+    maintenance?.let { MaintenanceBanner(it, Modifier.align(Alignment.TopCenter)) }
+    }
+}
+
+/** Shown while PlioPad is down for maintenance. Edits keep saving on the phone and sync when it is back. */
+@Composable
+private fun MaintenanceBanner(message: String, modifier: Modifier = Modifier) {
+    Surface(modifier.statusBarsPadding().padding(top = 8.dp, start = 16.dp, end = 16.dp), shape = RoundedCornerShape(16.dp),
+        color = Color(0xFF101D59), contentColor = Color.White, shadowElevation = 6.dp) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Text("PlioPad is down for maintenance", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+            Text(if (message.startsWith("PlioPad is down for maintenance")) "Your edits are saved on this phone and sync when it is back." else message + " Your edits are saved on this phone.",
+                style = MaterialTheme.typography.bodySmall, color = Color(0xFFC9CFEA))
+        }
     }
 }
 

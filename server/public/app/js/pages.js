@@ -1,10 +1,10 @@
-// Full-width pages: settings (workspace, members, billing, import/export, audit, account), tasks, Ask AI and the graph.
+// Full-width pages: settings (workspace, members, billing, import/export, audit, account), tasks, Ask AI and PlioSphere.
 import { h, icon, toast, modal, confirmBox, promptBox, relTime, fmtDate, avatar, mdToHtml, store, fmtBytes } from './ui.js';
 import { state, api, wsApi, download, isAdmin, canWrite, noteMeta } from './api.js';
 import { go, refreshBoot } from './main.js';
 
-const topbar = (title) => h('div', { class: 'topbar' }, h('button', { class: 'btn icon mobile-only', onclick: () => { document.querySelector('.shell').dataset.pane = 'side'; } }, icon('menu')),
-  h('strong', { style: { padding: '0 6px' } }, title));
+const topbar = (title, ...extra) => h('div', { class: 'topbar' }, h('button', { class: 'btn icon mobile-only', onclick: () => { document.querySelector('.shell').dataset.pane = 'side'; } }, icon('menu')),
+  h('strong', { style: { padding: '0 6px' } }, title), extra.length ? h('span', { class: 'grow' }) : null, ...extra);
 
 function page(main, title, ...content) {
   main.replaceChildren(topbar(title), h('div', { class: 'main-scroll' }, h('div', { class: 'page' }, ...content)));
@@ -246,81 +246,36 @@ export function askPage(main) {
 
 // ---------- Graph ----------
 export async function graphPage(main) {
+  let sphere = null;
   const canvas = h('canvas');
-  const wrap = h('div', { class: 'graph-wrap' }, canvas, h('div', { class: 'muted', style: { position: 'absolute', left: '16px', bottom: '12px', fontSize: '12px' } }, 'Linked pages pull together. Drag to pan, scroll to zoom, click a dot to open it.'));
-  main.replaceChildren(topbar('Graph'), wrap);
-  const { nodes, edges } = await wsApi('GET', '/graph');
-  const N = nodes.map((n, i) => ({ ...n, x: Math.cos(i) * 200 + Math.random() * 40, y: Math.sin(i) * 200 + Math.random() * 40, vx: 0, vy: 0, deg: 0 }));
-  const idx = new Map(N.map((n, i) => [n.id, i]));
-  const E = edges.map(([a, b, kind]) => [idx.get(a), idx.get(b), kind]).filter(([a, b]) => a !== undefined && b !== undefined);
-  for (const [a, b] of E) { N[a].deg++; N[b].deg++; }
-  const ctx = canvas.getContext('2d');
-  let view = { x: 0, y: 0, k: 1 };
-  let hover = null;
-  const css = getComputedStyle(document.documentElement);
-  const color = (v) => css.getPropertyValue(v).trim();
-  const resize = () => { canvas.width = wrap.clientWidth * devicePixelRatio; canvas.height = wrap.clientHeight * devicePixelRatio; redraw(); };
-  // The layout settles over ~400 frames; after that the canvas only redraws when something changes (hover, pan, zoom,
-  // resize). Repainting non-stop made the mouse pointer flicker or vanish on some Windows setups.
-  let ticks = 0;
-  let frame = 0;
-  const draw = () => {
-    frame = 0;
-    if (!canvas.isConnected) { removeEventListener("resize", resize); removeEventListener("mouseup", endDrag); return; }
-    if (ticks < 400) {
-      ticks++;
-      for (let i = 0; i < N.length; i++) for (let j = i + 1; j < N.length; j++) {
-        const a = N[i], b = N[j];
-        let dx = a.x - b.x, dy = a.y - b.y;
-        const d2 = Math.max(dx * dx + dy * dy, 25);
-        const f = 900 / d2;
-        dx *= f / Math.sqrt(d2); dy *= f / Math.sqrt(d2);
-        a.vx += dx; a.vy += dy; b.vx -= dx; b.vy -= dy;
-      }
-      for (const [a, b] of E) { const A = N[a], B = N[b]; const dx = B.x - A.x, dy = B.y - A.y; A.vx += dx * 0.01; A.vy += dy * 0.01; B.vx -= dx * 0.01; B.vy -= dy * 0.01; }
-      for (const n of N) { n.vx -= n.x * 0.002; n.vy -= n.y * 0.002; n.x += n.vx *= 0.82; n.y += n.vy *= 0.82; }
-      redraw(); // keep animating until the layout settles
-    }
-    const W = canvas.width, H = canvas.height, r = devicePixelRatio;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, W, H);
-    ctx.setTransform(r * view.k, 0, 0, r * view.k, W / 2 + view.x * r, H / 2 + view.y * r);
-    ctx.lineWidth = 1 / view.k;
-    for (const [a, b, kind] of E) { ctx.strokeStyle = kind === "link" ? color("--accent") + "88" : color("--line-2"); ctx.beginPath(); ctx.moveTo(N[a].x, N[a].y); ctx.lineTo(N[b].x, N[b].y); ctx.stroke(); }
-    ctx.font = `${12 / view.k}px ${color("--font")}`;
-    for (const n of N) {
-      const rad = 4 + Math.min(10, n.deg * 1.5);
-      ctx.fillStyle = n === hover ? color("--accent") : n.deg ? color("--fg-2") : color("--faint");
-      ctx.beginPath(); ctx.arc(n.x, n.y, rad, 0, Math.PI * 2); ctx.fill();
-      if (view.k > 0.6 || n === hover || n.deg > 2) { ctx.fillStyle = color("--muted"); ctx.fillText(`${n.icon || ""} ${n.title}`.trim(), n.x + rad + 3, n.y + 4); }
-    }
-  };
-  const redraw = () => { if (!frame) frame = requestAnimationFrame(draw); };
-  resize();
-  addEventListener("resize", resize);
-  const toWorld = (e) => { const b = canvas.getBoundingClientRect(); return { x: (e.clientX - b.left - b.width / 2 - view.x) / view.k, y: (e.clientY - b.top - b.height / 2 - view.y) / view.k }; };
-  let drag = null;
-  const setCursor = (c) => { if (canvas.style.cursor !== c) canvas.style.cursor = c; };
-  const endDrag = () => {
-    if (drag && !drag.moved && hover) go(`#/w/${state.wsId}/n/${hover.id}`);
-    drag = null;
-    setCursor(hover ? "pointer" : "default");
-  };
-  canvas.onmousedown = (e) => { drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false }; };
-  canvas.onmousemove = (e) => {
-    if (drag) {
-      view.x = drag.vx + e.clientX - drag.x; view.y = drag.vy + e.clientY - drag.y;
-      drag.moved ||= Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 4;
-      if (drag.moved) setCursor("grabbing");
-      return redraw();
-    }
-    const p = toWorld(e);
-    const next = N.find((n) => (n.x - p.x) ** 2 + (n.y - p.y) ** 2 < 100) || null;
-    if (next !== hover) { hover = next; redraw(); }
-    setCursor(hover ? "pointer" : "default");
-  };
-  canvas.onmouseleave = () => { if (!drag && hover) { hover = null; redraw(); } };
-  // Releasing the button outside the graph still ends the drag.
-  addEventListener("mouseup", endDrag);
-  canvas.onwheel = (e) => { e.preventDefault(); view.k = Math.max(0.2, Math.min(4, view.k * (e.deltaY < 0 ? 1.1 : 0.9))); redraw(); };
+  const info = h('div', { class: 'sphere-card', hidden: true });
+  const stats = h('span', { class: 'sphere-stats' }, '');
+  const wrap = h('div', { class: 'graph-wrap sphere' }, canvas, info,
+    h('div', { class: 'sphere-hint' }, 'Drag to spin · scroll to zoom · click a note to see its links, click again to open it · dashed threads are links PlioPad discovered'));
+  const showAuto = store.get('sphereAuto', true);
+  const autoToggle = h('label', { class: 'sphere-toggle', title: 'Connections PlioPad found by itself: mentions, shared tags and similar wording' },
+    h('input', { type: 'checkbox', checked: showAuto, onchange: (e) => { store.set('sphereAuto', e.target.checked); sphere?.setShowAuto(e.target.checked); } }), 'Discovered links');
+  main.replaceChildren(topbar('PlioSphere', stats, autoToggle, h('button', { class: 'btn sm', onclick: () => sphere?.recenter() }, 'Recenter')), wrap);
+  const { nodes, edges, auto = [] } = await wsApi('GET', '/graph');
+  const { createSphere } = await import('./sphere.js');
+  const open = (n) => go(`#/w/${state.wsId}/n/${n.id}`);
+  sphere = createSphere(canvas, {
+    nodes: nodes.map((n) => ({ id: n.id, title: `${n.icon ? n.icon + ' ' : ''}${n.title || 'Untitled'}`, group: n.notebook_id })),
+    edges: edges.map(([a, b]) => [a, b]),
+    auto,
+  }, {
+    showAuto,
+    onOpen: open,
+    onSelect: (n) => {
+      info.hidden = !n;
+      if (!n) return;
+      const links = sphere.neighbors(n);
+      const found = store.get('sphereAuto', true) ? sphere.discovered(n) : [];
+      info.replaceChildren(h('div', { class: 'grow' }, h('b', {}, n.title),
+        h('div', { class: 'muted' }, `${links} linked note${links === 1 ? '' : 's'}` + (found.length ? ` · ${found.length} discovered` : '')),
+        found.slice(0, 3).map((d) => h('div', { class: 'sphere-why' }, `✦ ${d.title}`, h('span', {}, ` · ${d.why}`)))),
+        h('button', { class: 'btn primary sm', onclick: () => open(n) }, 'Open'));
+    },
+  });
+  stats.textContent = `${sphere.stats.notes} notes · ${sphere.stats.links} links · ${sphere.stats.discovered} discovered`;
 }

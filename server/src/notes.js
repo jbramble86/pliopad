@@ -1,7 +1,7 @@
 // Notes, notebooks and tags: serialization, versioned saves with merging, search, tasks and sync sequencing.
 import { db } from './db.js';
 import * as Blocks from './blocks.js';
-import { ApiError, nowMs, isUuid, jdec, jenc, strLimit, clampStr } from './util.js';
+import { ApiError, nowMs, isUuid, jdec, jenc, strLimit, clampStr, uuid } from './util.js';
 
 export async function nextSeq(wsId) {
   return db.tx(async () => {
@@ -11,6 +11,46 @@ export async function nextSeq(wsId) {
 }
 
 const n = (v) => (v === null || v === undefined ? null : Number(v));
+
+/** Every page lives in a notebook. Pages without one go to the workspace's Inbox (created if it doesn't exist). */
+export async function defaultNotebookId(ws, userId = null) {
+  const nbs = await db.all('SELECT id, name FROM notebooks WHERE workspace_id=? AND deleted=0 ORDER BY sort, name', [ws.id]);
+  const found = nbs.find((nb) => nb.name.toLowerCase() === 'inbox') || nbs[0];
+  if (found) return found.id;
+  const id = uuid();
+  await db.insert('notebooks', { id, workspace_id: ws.id, name: 'Inbox', icon: '📥', sort: 0, seq: await nextSeq(ws.id), updated_at: nowMs(), created_by: userId });
+  return id;
+}
+
+/** The notebook a page belongs in: its parent's (sub-pages and database rows), else its own, else the Inbox. */
+async function notebookFor(ws, userId, parentId, notebookId) {
+  if (parentId) {
+    const p = await db.one('SELECT notebook_id FROM notes WHERE id=? AND workspace_id=?', [parentId, ws.id]);
+    if (p?.notebook_id) return p.notebook_id;
+  }
+  return notebookId || defaultNotebookId(ws, userId);
+}
+
+/** Moves a page's sub-pages (and theirs) along with it to another notebook. */
+async function moveDescendants(ws, parentId, notebookId) {
+  let level = [parentId];
+  for (let depth = 0; level.length && depth < 20; depth++) {
+    const kids = await db.all(`SELECT id FROM notes WHERE workspace_id=? AND deleted=0 AND parent_id IN (${level.map(() => '?').join(',')})`, [ws.id, ...level]);
+    for (const k of kids) await db.update('notes', { notebook_id: notebookId, seq: await nextSeq(ws.id) }, { id: k.id });
+    level = kids.map((k) => k.id);
+  }
+}
+
+/** One-time fix for pages saved before every page had to be in a notebook. */
+export async function fileOrphanPages() {
+  const rows = await db.all('SELECT id, workspace_id, parent_id FROM notes WHERE notebook_id IS NULL AND deleted=0 ORDER BY parent_id IS NOT NULL');
+  for (const r of rows) {
+    const ws = { id: Number(r.workspace_id) };
+    const nb = await notebookFor(ws, null, r.parent_id, null);
+    await db.update('notes', { notebook_id: nb, seq: await nextSeq(ws.id) }, { id: r.id });
+  }
+  return rows.length;
+}
 
 export function noteOut(r, withContent = true) {
   const content = jdec(r.content, []);
@@ -71,6 +111,13 @@ export async function saveNote(ws, user, id, input) {
     if (has('sort')) data.sort = Number(input.sort) || 0;
     if (has('reminder_at')) { data.reminder_at = input.reminder_at ? Number(input.reminder_at) : null; data.reminder_sent = 0; }
     if (has('trashed')) data.trashed_at = input.trashed ? now : null;
+    // The creation date can be changed (e.g. for notes that existed on paper before). Not in the future.
+    if (has('created_at') && row && Number(input.created_at) > 0 && Number(input.created_at) !== Number(row.created_at)) data.created_at = Math.min(Number(input.created_at), now);
+    // Every page belongs to a notebook (sub-pages and database rows share their parent's).
+    const parentId = has('parent_id') ? data.parent_id : row?.parent_id ?? null;
+    const notebookId = await notebookFor(ws, user.id, parentId, has('notebook_id') ? data.notebook_id : row?.notebook_id ?? null);
+    if (!row || notebookId !== row.notebook_id) data.notebook_id = notebookId;
+    else delete data.notebook_id;
     if (!Object.keys(data).length && row) return { row, merged: false };
 
     data.seq = await nextSeq(ws.id);
@@ -80,6 +127,7 @@ export async function saveNote(ws, user, id, input) {
       data.version = Number(row.version) + 1;
       await snapshot(ws, row);
       await db.update('notes', data, { id });
+      if (data.notebook_id) await moveDescendants(ws, id, data.notebook_id);
     } else {
       await db.insert('notes', { title: '', content: '[]', plain: '', ...data, id, workspace_id: ws.id, created_by: user.id,
         created_at: Number(input.created_at) || now, version: 1 });

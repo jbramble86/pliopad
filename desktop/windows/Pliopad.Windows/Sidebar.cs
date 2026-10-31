@@ -6,7 +6,7 @@ using static Pliopad.Ui;
 
 namespace Pliopad;
 
-/// <summary>The Notion-style sidebar: workspace menu, quick links, shortcuts, notebooks grouped into stacks, tags.</summary>
+/// <summary>The sidebar: workspace menu, quick links, pinned notes, notebooks grouped into collections, tags.</summary>
 public sealed partial class MainWindow
 {
     private readonly HashSet<string> _collapsed = [];
@@ -30,13 +30,14 @@ public sealed partial class MainWindow
         p.Children.Add(Row("", "Home", () => Navigate(new Route("home")), selected: Route.Kind == "home" && OpenNoteId == null, glyph: true));
         var openTasks = R.OpenTasks().Count;
         p.Children.Add(Row("", "Tasks", () => Navigate(new Route("tasks")), openTasks > 0 ? openTasks.ToString() : null, Route.Kind == "tasks", glyph: true));
+        p.Children.Add(Row("🪐", "PlioSphere", () => Navigate(new Route("sphere")), null, Route.Kind == "sphere"));
         if (R.AiEnabled) p.Children.Add(Row("", "Ask AI", () => Navigate(new Route("ask")), selected: Route.Kind == "ask", glyph: true));
         p.Children.Add(Row("", "All notes", () => Navigate(new Route("all")), notes.Count.ToString(), Route.Kind == "all", glyph: true));
         if (R.CanWrite) p.Children.Add(Row("", "New page", () => NewNote(), "Ctrl+N", glyph: true));
 
-        // Shortcuts (pinned notes)
+        // Pinned notes
         var pinned = notes.Where(n => n.Pinned).OrderBy(n => n.Title).ToList();
-        if (pinned.Count > 0 && Section(p, "shortcuts", "Shortcuts", () => Navigate(new Route("pinned"))))
+        if (pinned.Count > 0 && Section(p, "shortcuts", "Pinned", () => Navigate(new Route("pinned"))))
             foreach (var n in pinned) p.Children.Add(Row(n.DisplayIcon, n.DisplayTitle, () => OpenNote(n.Id), selected: OpenNoteId == n.Id && !Route.HasList));
 
         // Notebooks, stacks first (Evernote), then loose notebooks
@@ -134,11 +135,11 @@ public sealed partial class MainWindow
         var row = Row(nb.Icon ?? "📓", nb.Name, () => Navigate(new Route("notebook", nb.Id)), count.ToString(), Route.Kind == "notebook" && Route.Arg == nb.Id, indent);
         if (!R.CanWrite) return row;
         var stacks = R.Notebooks().Where(x => x.Stack != null).Select(x => x.Stack!).Distinct().OrderBy(x => x).ToList();
-        var move = new MenuFlyoutSubItem { Text = "Move to stack", Icon = new FontIcon { Glyph = "", FontFamily = Symbols } };
+        var move = new MenuFlyoutSubItem { Text = "Move to collection", Icon = new FontIcon { Glyph = "", FontFamily = Symbols } };
         foreach (var s in stacks.Where(s => s != nb.Stack)) move.Items.Add(Item(s, () => R.SetNotebookStack(nb.Id, s)));
         if (stacks.Count > 0) move.Items.Add(new MenuFlyoutSeparator());
-        move.Items.Add(Item("New stack…", async () => { if (await Prompt(Root, "New stack", "", "Stack name", "Create") is { Length: > 0 } s) R.SetNotebookStack(nb.Id, s); }, ""));
-        if (nb.Stack != null) move.Items.Add(Item("Remove from stack", () => R.SetNotebookStack(nb.Id, null), ""));
+        move.Items.Add(Item("New collection…", async () => { if (await Prompt(Root, "New collection", "", "Collection name", "Create") is { Length: > 0 } s) R.SetNotebookStack(nb.Id, s); }, ""));
+        if (nb.Stack != null) move.Items.Add(Item("Remove from collection", () => R.SetNotebookStack(nb.Id, null), ""));
         row.ContextFlyout = Menu(
             Item("New note here", () => NewNote(nb.Id), ""),
             new MenuFlyoutSeparator(),
@@ -154,11 +155,11 @@ public sealed partial class MainWindow
     }
 
     private MenuFlyout? StackMenu(string stack) => !R.CanWrite ? null : Menu(
-        Item("New notebook in stack", () => _ = NewNotebook(stack), ""),
+        Item("New notebook in collection", () => _ = NewNotebook(stack), ""),
         Item("Add notebooks…", () => _ = PickNotebooksForStack(stack), ""),
-        Item("Rename stack", async () => { if (await Prompt(Root, "Rename stack", stack) is { Length: > 0 } s) { R.RenameStack(stack, s); if (Route.Kind == "stack" && Route.Arg == stack) Navigate(new Route("stack", s), remember: false); } }, ""),
+        Item("Rename collection", async () => { if (await Prompt(Root, "Rename collection", stack) is { Length: > 0 } s) { R.RenameStack(stack, s); if (Route.Kind == "stack" && Route.Arg == stack) Navigate(new Route("stack", s), remember: false); } }, ""),
         new MenuFlyoutSeparator(),
-        Item("Ungroup stack", () => R.UngroupStack(stack), ""));
+        Item("Ungroup collection", () => R.UngroupStack(stack), ""));
 
     public async Task NewNotebook(string? stack)
     {
@@ -242,7 +243,7 @@ public sealed partial class MainWindow
         {
             ("Ctrl+K", "Search and commands"), ("Ctrl+N", "New note"), ("Ctrl+Shift+N", "New database"), ("Ctrl+D", "Today's daily note"),
             ("Ctrl+Alt+N", "Quick capture from anywhere in Windows"), ("Ctrl+Shift+O", "Open the note in its own window"), ("Ctrl+\\", "Show or hide the sidebar"),
-            ("Alt+Left", "Back"), ("Ctrl+1 / 2 / 3", "Home / Tasks / All notes"), ("F5", "Sync now"),
+            ("Alt+Left", "Back"), ("Ctrl+1 / 2 / 3 / 4", "Home / Tasks / All notes / PlioSphere"), ("F5", "Sync now"),
             ("", ""), ("In the editor", ""), ("/", "Insert a block"), ("[[", "Link to another note"), ("# ## ###", "Headings"), ("- or *", "Bulleted list"),
             ("1.", "Numbered list"), ("[]", "To-do"), (">", "Quote"), ("```", "Code"), ("Ctrl+B / I / E", "Bold, italic, code"), ("Ctrl+Shift+S", "Strikethrough"),
             ("Tab / Shift+Tab", "Indent / outdent"), ("Alt+Shift+↑/↓", "Move block"), ("Ctrl+Enter", "Check a to-do"), ("Ctrl+Shift+D", "Duplicate block"),

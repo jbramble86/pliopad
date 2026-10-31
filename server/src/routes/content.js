@@ -6,6 +6,7 @@ import { route } from '../http.js';
 import { db } from '../db.js';
 import * as A from '../auth.js';
 import * as Blocks from '../blocks.js';
+import { related } from '../related.js';
 import * as N from '../notes.js';
 import { limit, useAi, checkStorage } from '../plans.js';
 import { runAction, askNotes } from '../ai.js';
@@ -222,7 +223,7 @@ route('POST', '/api/w/:ws/tasks/toggle', async (ctx) => {
 
 route('GET', '/api/w/:ws/graph', async (ctx) => {
   const { ws } = await A.requireWorkspace(ctx);
-  const rows = await db.all('SELECT id, title, icon, parent_id, notebook_id, content FROM notes WHERE workspace_id=? AND deleted=0 AND trashed_at IS NULL LIMIT 2000', [ws.id]);
+  const rows = await db.all('SELECT id, title, icon, parent_id, notebook_id, content, plain, tags FROM notes WHERE workspace_id=? AND deleted=0 AND trashed_at IS NULL AND is_template=0 LIMIT 2000', [ws.id]);
   const ids = new Set(rows.map((r) => r.id));
   const nodes = [];
   const edges = [];
@@ -231,7 +232,11 @@ route('GET', '/api/w/:ws/graph', async (ctx) => {
     for (const to of Blocks.links(jdec(r.content, []))) if (ids.has(to) && to !== r.id) edges.push([r.id, to, 'link']);
     if (r.parent_id && ids.has(r.parent_id)) edges.push([r.parent_id, r.id, 'child']);
   }
-  return { nodes, edges };
+  // Discovered links: connections PlioPad finds by itself (mentions, shared tags, similar wording).
+  const linked = new Set(edges.map(([x, y]) => `${x}|${y}`));
+  const tagNames = Object.fromEntries((await db.all('SELECT id, name FROM tags WHERE workspace_id=? AND deleted=0', [ws.id])).map((t) => [t.id, t.name]));
+  const auto = related(rows.map((r) => ({ id: r.id, title: r.title, text: r.plain || '', tags: jdec(r.tags, []) })), linked, tagNames);
+  return { nodes, edges, auto };
 });
 
 // ---------- Comments & presence ----------

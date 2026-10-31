@@ -82,6 +82,26 @@ await Test("scratch pad reuses block ids line by line", async () =>
     await Task.CompletedTask;
 });
 
+await Test("PlioSphere discovers links: mentions, shared tags, similar wording", async () =>
+{
+    var docs = new List<Related.Doc>
+    {
+        new("trip", "Trip to Lisbon", "Flights booked. Find a venue near Alfama for the team dinner, check the budget.", []),
+        new("dinner", "Team dinner", "Venue shortlist in Alfama, budget per head, dietary needs.", []),
+        new("plan", "Q4 plan", "Goals for the quarter. See the Trip to Lisbon for the offsite.", []),
+        new("gym", "Gym", "Squats, deadlifts, rows.", ["t1"]),
+        new("run", "Running", "Intervals on Tuesday.", ["t1"]),
+        new("linked", "Already linked", "Venue budget Alfama dinner", []),
+    };
+    var found = Related.Find(docs, new HashSet<string> { "linked|dinner" }, new Dictionary<string, string> { ["t1"] = "fitness" });
+    Related.Link? Has(string a, string b) => found.FirstOrDefault(l => (l.A == a && l.B == b) || (l.A == b && l.B == a));
+    True(Has("trip", "dinner") != null, "similar wording");
+    True(Has("plan", "trip")?.Why.Contains("Mentions “Trip to Lisbon”") == true, "mention");
+    True(Has("gym", "run")?.Why.Contains("#fitness") == true, "shared tag");
+    True(Has("linked", "dinner") == null && Has("gym", "trip") == null, "no hand-made or unrelated pairs");
+    await Task.CompletedTask;
+});
+
 await Test("store: local edits are dirty, notebooks and stacks", async () =>
 {
     var repo = new Repo(TempDir());

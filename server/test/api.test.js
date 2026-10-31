@@ -8,6 +8,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { merge, fromMarkdown, fromHtml, parseEnex } from '../src/blocks.js';
+import { related } from '../src/related.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pliopad-test-'));
@@ -55,6 +56,24 @@ test('markdown, html and enex import', () => {
   assert.equal(fromHtml(enex[0].html)[0].x, 'Hello');
 });
 
+test('PlioSphere discovers links: mentions, shared tags, similar wording', () => {
+  const notes = [
+    { id: 'trip', title: 'Trip to Lisbon', text: 'Flights booked. Find a venue near Alfama for the team dinner, check the budget.' },
+    { id: 'dinner', title: 'Team dinner', text: 'Venue shortlist in Alfama, budget per head, dietary needs.' },
+    { id: 'plan', title: 'Q4 plan', text: 'Goals for the quarter. See the Trip to Lisbon for the offsite.' },
+    { id: 'gym', title: 'Gym', text: 'Squats, deadlifts, rows.', tags: ['t1'] },
+    { id: 'run', title: 'Running', text: 'Intervals on Tuesday.', tags: ['t1'] },
+    { id: 'linked', title: 'Already linked', text: 'Venue budget Alfama dinner' },
+  ];
+  const out = related(notes, new Set(['linked|dinner']), { t1: 'fitness' });
+  const has = (a, b) => out.find((e) => (e.a === a && e.b === b) || (e.a === b && e.b === a));
+  assert.ok(has('trip', 'dinner'), 'similar wording');
+  assert.match(has('plan', 'trip').why, /Mentions “Trip to Lisbon”/);
+  assert.match(has('gym', 'run').why, /#fitness/);
+  assert.ok(!has('linked', 'dinner'), 'hand-made links are not repeated');
+  assert.ok(!has('gym', 'trip'), 'unrelated notes stay apart');
+});
+
 let owner, ws, member;
 
 test('sign up creates a workspace with starter content; first user is platform admin', async () => {
@@ -77,6 +96,32 @@ test('login, wrong password and two-factor', async () => {
   const setup = await api('POST', '/api/me/mfa/setup', null, ok.data.token);
   assert.match(setup.data.uri, /^otpauth:\/\/totp\//);
   assert.equal((await api('POST', '/api/me/mfa/enable', { secret: setup.data.secret, code: '000000' }, ok.data.token)).status, 422);
+});
+
+test('creation dates can be edited, never into the future', async () => {
+  const id = crypto.randomUUID();
+  await api('PUT', `/api/w/${ws}/notes/${id}`, { title: 'Old idea' }, owner);
+  const past = Date.UTC(2020, 0, 15);
+  let r = await api('PUT', `/api/w/${ws}/notes/${id}`, { created_at: past }, owner);
+  assert.equal(r.data.created_at, past);
+  r = await api('PUT', `/api/w/${ws}/notes/${id}`, { created_at: Date.now() + 86400000 * 30 }, owner);
+  assert.ok(r.data.created_at <= Date.now(), 'future dates are capped at now');
+});
+
+test('every page lives in a notebook; sub-pages follow their parent', async () => {
+  const b = await api('GET', `/api/w/${ws}/bootstrap`, null, owner);
+  const inbox = b.data.notebooks.find((n) => n.name === 'Inbox').id;
+  const other = b.data.notebooks.find((n) => n.name !== 'Inbox').id;
+  const loose = crypto.randomUUID();
+  let r = await api('PUT', `/api/w/${ws}/notes/${loose}`, { title: 'No notebook given', notebook_id: null }, owner);
+  assert.equal(r.data.notebook_id, inbox);
+  const parent = crypto.randomUUID(), child = crypto.randomUUID();
+  await api('PUT', `/api/w/${ws}/notes/${parent}`, { title: 'Parent', notebook_id: other }, owner);
+  r = await api('PUT', `/api/w/${ws}/notes/${child}`, { title: 'Child', parent_id: parent, notebook_id: null }, owner);
+  assert.equal(r.data.notebook_id, other);
+  await api('PUT', `/api/w/${ws}/notes/${parent}`, { notebook_id: inbox }, owner);
+  r = await api('GET', `/api/w/${ws}/notes/${child}`, null, owner);
+  assert.equal(r.data.notebook_id, inbox, 'sub-page moved with its parent');
 });
 
 test('notes: create, edit, concurrent edits merge, versions, backlinks, search', async () => {
@@ -195,4 +240,32 @@ test('platform admin: stats, tenants, suspend, audit, settings masking, imperson
   await api('PATCH', `/api/admin/workspaces/${ws}`, { status: 'active' }, owner);
   const csv = await fetch(`${BASE}/api/admin/audit?format=csv`, { headers: { Authorization: `Bearer ${owner}` } });
   assert.match(await csv.text(), /^time,workspace,user,action/);
+});
+
+test('maintenance mode blocks everyone but platform admins; upkeep tasks run', async () => {
+  let r = await api('POST', '/api/admin/maintenance/mode', { on: true, message: 'Upgrading the database', until: Date.now() + 3600000 }, owner);
+  assert.equal(r.status, 200);
+  assert.equal(r.data.mode.on, true);
+  const info = await api('GET', '/api/site-info');
+  assert.equal(info.data.maintenance.on, true);
+  assert.equal(info.data.maintenance.message, 'Upgrading the database');
+  r = await api('GET', `/api/w/${ws}/bootstrap`, null, member);
+  assert.equal(r.status, 503);
+  assert.equal(r.data.code, 'maintenance');
+  const page = await fetch(`${BASE}/s/00000000000000000000`);
+  assert.equal(page.status, 503, 'published pages show the maintenance page');
+  const home = await (await fetch(`${BASE}/`)).text();
+  assert.match(home, /class="maint">.* is down for scheduled maintenance until .*UTC. Upgrading the database./, 'the website shows a banner');
+  r = await api('GET', `/api/w/${ws}/bootstrap`, null, owner);
+  assert.equal(r.status, 200, 'platform admins keep working');
+  for (const task of ['backup', 'trash', 'versions', 'files', 'sessions', 'search', 'orphans', 'optimize']) {
+    r = await api('POST', '/api/admin/maintenance/run', { task }, owner);
+    assert.equal(r.status, 200, task);
+    assert.equal(r.data.result.ok, true, `${task}: ${r.data.result.message}`);
+  }
+  assert.ok(r.data.backups.length >= 1, 'a backup file was written');
+  r = await api('POST', '/api/admin/maintenance/mode', { on: false }, owner);
+  assert.equal(r.data.mode, null);
+  r = await api('GET', `/api/w/${ws}/bootstrap`, null, member);
+  assert.notEqual(r.status, 503);
 });

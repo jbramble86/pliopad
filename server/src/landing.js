@@ -1,4 +1,4 @@
-// The public website at "/": the product story, with the live knowledge graph as the centerpiece.
+// The public website at "/": the product story, with PlioSphere (the live 3D map of your notes) as the centerpiece.
 // Brand: Midnight Navy #101D59, Periwinkle #647BFF, Mint #83EBC0, Soft Ivory #FAF9F5.
 import { escapeHtml as e, setting } from './util.js';
 import { allPlans } from './plans.js';
@@ -129,18 +129,18 @@ footer .wrap{display:flex;gap:24px;align-items:center;flex-wrap:wrap}footer a{te
 @media (max-width:560px){.plans,.plans.n2,.plans.n3{grid-template-columns:1fr}.legend{bottom:36px}.hint{display:none}.wrap{padding:0 16px}nav .btn.ghost{display:none}.devices .phone{display:none}.board{grid-template-columns:1fr 1fr}.board .col:last-child{display:none}}
 `;
 
-// Demo workspace for the hero graph: three areas of a life, with notes that link across them.
+// Demo workspace for the hero PlioSphere: three areas of a life, with notes that link across them.
 const GRAPH = `[
 ["Q4 launch plan","w",["Roadmap","Pricing","Launch post","Weekly sync","Customer interviews"],"Goals, owners and dates for the launch. Links to pricing, the roadmap and every meeting that shaped it."],
-["Roadmap","w",["Android offline sync","Windows app","Graph view","Q4 launch plan"],"A database: Board, Table and Calendar views of everything shipping this quarter."],
+["Roadmap","w",["Android offline sync","Windows app","PlioSphere","Q4 launch plan"],"A database: Board, Table and Calendar views of everything shipping this quarter."],
 ["Weekly sync","w",["Q4 launch plan","Hiring","Customer interviews"],"Running notes from every Monday. Action items become tasks with due dates."],
 ["Customer interviews","w",["Pricing","Feature requests","Weekly sync"],"Twelve conversations, tagged by theme. Ask AI pulls quotes out with citations."],
 ["Pricing","w",["Customer interviews","Q4 launch plan"],"Free, Pro and Business: what each includes and why."],
 ["Launch post","w",["Q4 launch plan","Brand guide"],"Draft blog post for launch day."],
 ["Hiring","w",["Weekly sync","Interview kit"],"Open roles and the scorecard for each."],
 ["Interview kit","w",["Hiring"],"A template: questions, rubric, notes."],
-["Feature requests","w",["Customer interviews","Graph view","Roadmap"],"Everything customers asked for, ranked."],
-["Graph view","w",["Roadmap","Feature requests"],"See how every note connects. You are looking at it."],
+["Feature requests","w",["Customer interviews","PlioSphere","Roadmap"],"Everything customers asked for, ranked."],
+["PlioSphere","w",["Roadmap","Feature requests"],"Every note as a star, every link a thread. You are looking at it."],
 ["Android offline sync","w",["Roadmap"],"Sync design: block-level merging, so two devices never overwrite each other."],
 ["Windows app","w",["Roadmap"],"Native WinUI client with quick capture from anywhere."],
 ["Brand guide","w",["Launch post"],"Midnight Navy, Periwinkle, Mint and Soft Ivory."],
@@ -159,9 +159,9 @@ const GRAPH = `[
 ]`;
 
 const FAQ = [
-  ['How is PlioPad different from Evernote or Notion?', 'PlioPad pairs fast, notebook-based capture with pages, blocks and databases, and then shows you how it all connects in a live graph. It also ships real native apps for Windows and Android that work fully offline and merge edits block by block when you reconnect.'],
+  ['What makes PlioPad different?', 'Fast capture, flexible pages and databases, and PlioSphere: a live 3D map that shows how everything you write connects. It also ships real native apps for Windows and Android that work fully offline and merge edits block by block when you reconnect.'],
   ['Do the apps work offline?', 'Yes. The Windows and Android apps keep your notes on the device. You can write, search and organize without a connection, and everything syncs when you are back online. If two people edited the same note, PlioPad merges their changes block by block instead of overwriting.'],
-  ['What is the graph?', 'Every time you link one note to another (type [[ in any note) PlioPad draws that connection. The graph shows your whole workspace as a map: clusters form around projects, and forgotten notes resurface because they link to what you are working on now.'],
+  ['What is PlioSphere?', 'Every time you link one note to another (type [[ in any note) PlioPad draws that connection. PlioSphere shows your whole workspace as a 3D map you can spin and explore: clusters form around projects, and forgotten notes resurface because they link to what you are working on now.'],
   ['Is my data private?', 'Your workspace is private to its members. Sign-ins use hashed passwords with optional two-factor authentication, and you can export everything at any time. Teams on Business get an audit log of every sensitive action.'],
   ['Can I import my notes?', 'Yes. Import Markdown and Evernote exports from Settings, or paste text straight into a page: headings, lists and to-dos are converted automatically.'],
   ['Which devices are supported?', 'Any modern browser, Windows 10 and 11, and Android 8 or newer, with a layout built for foldables and tablets. A native Mac app is on the way.'],
@@ -183,7 +183,7 @@ function planCard(k, p, best) {
 <h3>${e(p.name)}</h3><p style="color:var(--muted);font-size:14.5px;margin:6px 0 0;min-height:44px">${blurbs[k] || ''}</p>
 <div class="price">${p.price == null ? 'Custom' : p.price === 0 ? '$0' : `$${p.price}<small>${per}</small>`}</div>
 <ul><li>${people(p.members)}</li><li>${gb(p.storage_mb)} storage</li><li>${Number(p.ai_per_month).toLocaleString('en-US')} AI requests a month</li><li>${p.history_days >= 365 ? Math.round(p.history_days / 365) + '-year' : p.history_days + '-day'} page history</li>
-<li>Graph, offline Windows &amp; Android apps</li>${p.guests ? '<li>Share pages with guests</li>' : ''}${p.audit ? '<li>Audit log &amp; admin controls</li>' : ''}</ul>
+<li>PlioSphere, offline Windows &amp; Android apps</li>${p.guests ? '<li>Share pages with guests</li>' : ''}${p.audit ? '<li>Audit log &amp; admin controls</li>' : ''}</ul>
 <a class="btn ${best ? 'primary' : 'ghost'}" href="${cta[1]}">${cta[0]}</a></div>`;
 }
 
@@ -199,20 +199,23 @@ function plansHtml() {
 
 export function renderLanding(res) {
   const app = e(setting('app_name', 'PlioPad'));
+  const m = setting('maintenance', null);
+  const until = m?.until ? new Date(m.until).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC', timeZoneName: 'short' }) : '';
+  const notice = m?.on ? `<div class="maint">${app} is down for scheduled maintenance${until ? ` until ${e(until)}` : ''}. ${m.message && !m.message.startsWith('PlioPad is down') ? e(m.message.replace(/[.!?]?$/, '.')) + ' ' : ''}Your notes are safe, and the apps keep working offline.</div>` : '';
   const wordmark = app === 'PlioPad' || app === 'Pliopad' ? 'Plio<b>Pad</b>' : app;
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
   res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${app} · Every note, connected</title>
-<meta name="description" content="Capture like Evernote, organize like Notion, and see how it all connects in a live graph. Native apps for Windows and Android that work offline.">
+<meta name="description" content="Capture in seconds, shape it into pages and databases, and see how it all connects in PlioSphere. Native apps for Windows and Android that work offline.">
 <meta property="og:title" content="${app} · Every note, connected"><meta property="og:description" content="Notes, docs and databases that link themselves into a living map of your work. Web, Windows and Android.">
 <meta name="theme-color" content="#101D59"><link rel="icon" href="/brand/PlioPad-mark.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<style>${CSS}</style></head><body>
-
+<style>${CSS}.maint{background:#83EBC0;color:#101D59;text-align:center;font-weight:600;font-size:14px;padding:10px 16px}</style></head><body>
+${notice}
 <header id="top"><div class="wrap"><nav>
 <a class="logo" href="/">${MARK}<span>${wordmark}</span></a>
-<div class="links"><a href="#graph">Graph</a><a href="#features">Features</a><a href="#apps">Apps</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a></div>
+<div class="links"><a href="#graph">PlioSphere</a><a href="#features">Features</a><a href="#apps">Apps</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a></div>
 <div class="right"><a class="btn ghost" href="/app/#/login">Sign in</a><a class="btn primary" href="/app/#/signup">Start free</a></div>
 </nav></div></header>
 
@@ -220,16 +223,16 @@ export function renderLanding(res) {
 <div>
 <span class="eyebrow">● Notes that connect themselves</span>
 <h1>Every note,<br><em>connected.</em></h1>
-<p class="lead">Capture like Evernote. Organize like Notion. Then watch ${app} turn your notes into a living map of everything you know, so the right idea is always one link away.</p>
+<p class="lead">Jot it down in a second, shape it into pages, lists and databases, and watch ${app} weave everything you know into PlioSphere: a living 3D map where the right idea is always one link away.</p>
 <div class="cta"><a class="btn primary" href="/app/#/signup">Start free</a><a class="btn ghost light" href="#apps">Get the apps</a></div>
 <div class="trust"><span>Free for up to 3 people</span><span>Works offline</span><span>Web · Windows · Android</span></div>
 </div>
 <div class="graph-card" id="graph-card">
-<div class="graph-bar"><div class="dots"><i></i><i></i><i></i></div><span>Graph · Your workspace</span></div>
-<canvas id="graph" aria-label="Interactive graph of linked notes"></canvas>
+<div class="graph-bar"><div class="dots"><i></i><i></i><i></i></div><span>PlioSphere · Your workspace</span></div>
+<canvas id="graph" aria-label="PlioSphere: an interactive 3D map of linked notes"></canvas>
 <div class="peek" id="peek"></div>
 <div class="legend"><span><i style="background:#647BFF"></i>Work</span><span><i style="background:#83EBC0"></i>Research</span><span><i style="background:#F4D6A0"></i>Personal</span></div>
-<div class="hint">Hover a note · drag to rearrange</div>
+<div class="hint">Drag to spin · hover a note</div>
 </div>
 </div></div>
 
@@ -238,13 +241,13 @@ export function renderLanding(res) {
 </div></div>
 
 <section id="graph"><div class="wrap center reveal">
-<span class="eyebrow">The graph</span>
+<span class="eyebrow">PlioSphere</span>
 <h2 style="margin-top:12px">See how your ideas connect.</h2>
-<p class="lead">Folders hide things. Links surface them. Every [[link]] you type becomes a thread in your graph, so meetings lead to decisions, decisions lead to projects, and nothing you write is ever lost in a folder again.</p>
+<p class="lead">Folders hide things. Links surface them. Every [[link]] you type becomes a thread in your PlioSphere, so meetings lead to decisions, decisions lead to projects, and nothing you write is ever lost in a folder again.</p>
 <div class="trio">
 <div class="tile reveal"><div class="ico">🔗</div><h3>Link as you type</h3><p>Type <kbd>[[</kbd> in any note to link another, or create it on the spot. No setup, no tagging rituals.</p></div>
 <div class="tile reveal"><div class="ico">↩️</div><h3>Backlinks, automatically</h3><p>Every note shows what links to it. Open a project and see every meeting, doc and idea that mentioned it.</p></div>
-<div class="tile reveal"><div class="ico">✨</div><h3>Clusters you didn't plan</h3><p>Related notes pull together on the graph. Spot themes across projects, and rediscover notes from months ago.</p></div>
+<div class="tile reveal"><div class="ico">✨</div><h3>Clusters you didn't plan</h3><p>Related notes pull together in PlioSphere. Spot themes across projects, and rediscover notes from months ago.</p></div>
 </div></div></section>
 
 <section id="features" style="padding-top:0"><div class="wrap">
@@ -262,13 +265,13 @@ export function renderLanding(res) {
 <div class="row flip reveal"><div class="copy">
 <span class="eyebrow">Write &amp; organize</span><h2 style="margin-top:12px">Pages that do more than hold text.</h2>
 <p class="lead">A block editor that gets out of your way, with databases built in.</p>
-<ul class="ticks"><li>Type <kbd>/</kbd> for headings, to-dos, toggles, callouts, code and images</li><li>Notebooks and stacks for structure; tags and links for everything else</li><li>Databases with Board, Table and Calendar views. Every row is a page.</li><li>To-dos from every note roll up into one Tasks view, sorted by due date</li></ul>
+<ul class="ticks"><li>Type <kbd>/</kbd> for headings, to-dos, toggles, callouts, code and images</li><li>Notebooks and collections for structure; tags and links for everything else</li><li>Databases with Board, Table and Calendar views. Every row is a page.</li><li>To-dos from every note roll up into one Tasks view, sorted by due date</li></ul>
 </div><div class="mock">
 <div class="t">🗺️ Product roadmap</div>
 <div class="board">
 <div class="col"><h4><span class="chip" style="background:#EEECE6">Not started</span></h4><div class="card">Customer interviews<small>Nov 11 · Dana</small></div><div class="card">Pricing page<small>Nov 18</small></div></div>
 <div class="col"><h4><span class="chip" style="background:#E3E8FF;color:#3346c4">In progress</span></h4><div class="card">Windows beta<small>Today · Jeremy</small></div></div>
-<div class="col"><h4><span class="chip" style="background:#DDF8EC;color:#1d7a55">Done</span></h4><div class="card">Offline sync<small>Oct 25</small></div><div class="card">Graph view<small>Oct 20</small></div></div>
+<div class="col"><h4><span class="chip" style="background:#DDF8EC;color:#1d7a55">Done</span></h4><div class="card">Offline sync<small>Oct 25</small></div><div class="card">PlioSphere<small>Oct 20</small></div></div>
 </div>
 <div class="slash"><div class="on"><b>☑</b>To-do list</div><div><b>H1</b>Heading 1</div><div><b>▦</b>Database</div><div><b>💡</b>Callout</div></div>
 </div></div>
@@ -311,7 +314,7 @@ export function renderLanding(res) {
 
 <section id="pricing" style="padding-top:0"><div class="wrap center">
 <span class="eyebrow">Pricing</span><h2 style="margin-top:12px">Plans for you, and for your team.</h2>
-<p class="lead">Every plan includes the graph, offline apps and unlimited notes. Start free and upgrade any time.</p>
+<p class="lead">Every plan includes PlioSphere, offline apps and unlimited notes. Start free and upgrade any time.</p>
 <div style="text-align:left">${plansHtml()}</div>
 </div></section>
 
@@ -367,108 +370,35 @@ if (new URLSearchParams(location.search).get('plans') === 'team') document.query
   } catch { box.innerHTML = '<a href="/app/"><span class="i">🌐</span><div><b>Open ${app}</b></div></a>'; }
 })();
 
-// The hero graph: a small force-directed layout of a demo workspace.
-(() => {
-  const data = ${GRAPH};
-  const canvas = document.getElementById('graph'), card = document.getElementById('graph-card'), peek = document.getElementById('peek');
-  const ctx = canvas.getContext('2d');
-  const COLORS = { w: '#647BFF', r: '#83EBC0', p: '#F4D6A0' };
-  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const nodes = data.map(([label, group, , text], i) => ({ i, label, group, text, x: 0, y: 0, vx: 0, vy: 0, deg: 0 }));
-  const byLabel = Object.fromEntries(nodes.map((n) => [n.label, n]));
-  const edges = [], seen = new Set();
-  data.forEach(([label, , links]) => links.forEach((t) => {
-    const a = byLabel[label], b = byLabel[t]; if (!a || !b) return;
-    const k = [a.i, b.i].sort().join('-'); if (seen.has(k)) return; seen.add(k);
-    edges.push([a, b]); a.deg++; b.deg++;
-  }));
-  const nbr = new Map(nodes.map((n) => [n, new Set()]));
-  edges.forEach(([a, b]) => { nbr.get(a).add(b); nbr.get(b).add(a); });
-  let W = 0, H = 0, dpr = 1, hover = null, drag = null, energy = 1, visible = true;
-  const radius = (n) => 4 + Math.sqrt(n.deg) * 3.2;
-
-  function size() {
-    const r = canvas.getBoundingClientRect(); dpr = Math.min(2, devicePixelRatio || 1);
-    W = r.width; H = r.height; canvas.width = W * dpr; canvas.height = H * dpr;
-  }
-  size();
-  // Start each area in its own region so clusters read clearly.
-  const seeds = { w: [0.38, 0.48], r: [0.72, 0.32], p: [0.7, 0.72] };
-  nodes.forEach((n) => { const [sx, sy] = seeds[n.group]; n.x = W * sx + (Math.random() - 0.5) * 120; n.y = H * sy + (Math.random() - 0.5) * 120; });
-
-  function step() {
-    const cx = W / 2, cy = H / 2 + 10;
-    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
-      const a = nodes[i], b = nodes[j]; let dx = a.x - b.x, dy = a.y - b.y; let d2 = dx * dx + dy * dy || 0.01;
-      const f = 2600 / d2; const d = Math.sqrt(d2); dx /= d; dy /= d;
-      a.vx += dx * f; a.vy += dy * f; b.vx -= dx * f; b.vy -= dy * f;
-    }
-    for (const [a, b] of edges) {
-      const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, f = (d - 78) * 0.012;
-      a.vx += dx / d * f; a.vy += dy / d * f; b.vx -= dx / d * f; b.vy -= dy / d * f;
-    }
-    let moved = 0;
-    for (const n of nodes) {
-      n.vx += (cx - n.x) * 0.0016; n.vy += (cy - n.y) * 0.0022;
-      if (n === drag) { n.vx = n.vy = 0; continue; }
-      n.vx *= 0.82; n.vy *= 0.82; n.x += n.vx; n.y += n.vy;
-      const r = radius(n) + 8; n.x = Math.max(r, Math.min(W - r, n.x)); n.y = Math.max(r + 34, Math.min(H - r - 30, n.y));
-      moved += Math.abs(n.vx) + Math.abs(n.vy);
-    }
-    energy = moved / nodes.length;
-  }
-
-  function draw(t) {
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
-    const focus = hover || drag, near = focus ? nbr.get(focus) : null;
-    for (const [a, b] of edges) {
-      const on = focus && (a === focus || b === focus);
-      ctx.strokeStyle = on ? 'rgba(131,235,192,.9)' : focus ? 'rgba(255,255,255,.05)' : 'rgba(170,182,240,.22)';
-      ctx.lineWidth = on ? 1.8 : 1; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-    }
-    for (const n of nodes) {
-      const dim = focus && n !== focus && !near.has(n);
-      const r = radius(n) * (n === focus ? 1.35 : 1);
-      if (n === focus || (!focus && n.deg >= 5)) { ctx.fillStyle = COLORS[n.group] + '33'; ctx.beginPath(); ctx.arc(n.x, n.y, r + 7 + (still ? 0 : Math.sin(t / 600 + n.i) * 1.5), 0, 7); ctx.fill(); }
-      ctx.globalAlpha = dim ? 0.18 : 1; ctx.fillStyle = COLORS[n.group]; ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 7); ctx.fill();
-      if (!dim && (n.deg >= 4 || n === focus || (near && near.has(n)))) {
-        ctx.font = (n === focus ? '600 13px' : '500 12px') + ' Inter, system-ui, sans-serif';
-        ctx.fillStyle = n === focus ? '#fff' : 'rgba(225,230,255,.85)'; ctx.textAlign = 'center'; const tw = ctx.measureText(n.label).width / 2 + 4; ctx.fillText(n.label, Math.max(tw, Math.min(W - tw, n.x)), n.y + r + 15);
-      }
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  function loop(t) {
-    if (visible && (energy > 0.02 || drag || hover || !still)) { if (!still || drag) step(); draw(t || 0); }
-    requestAnimationFrame(loop);
-  }
-  if (still) for (let i = 0; i < 400; i++) step();
-  for (let i = 0; i < 60; i++) step();
-  requestAnimationFrame(loop);
-
-  const at = (ev) => { const r = canvas.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
-  const pick = (x, y) => nodes.find((n) => Math.hypot(n.x - x, n.y - y) < radius(n) + 6) || null;
-  function showPeek(n) {
-    if (!n) { peek.classList.remove('on'); return; }
-    const links = nbr.get(n).size;
-    peek.innerHTML = '<b></b><span></span><small></small>';
-    peek.querySelector('b').textContent = n.label; peek.querySelector('span').textContent = n.text;
-    peek.querySelector('small').textContent = links + ' linked note' + (links === 1 ? '' : 's');
-    const left = n.x + 18 + 250 > W ? n.x - 268 : n.x + 18, top = Math.max(40, Math.min(H - 150, n.y - 40));
-    peek.style.left = left + 'px'; peek.style.top = top + 'px'; peek.classList.add('on');
-  }
-  canvas.addEventListener('pointermove', (ev) => {
-    const [x, y] = at(ev);
-    if (drag) { drag.x = x; drag.y = y; energy = 1; return; }
-    const n = pick(x, y); if (n !== hover) { hover = n; showPeek(n); canvas.style.cursor = n ? 'pointer' : 'grab'; }
-  });
-  canvas.addEventListener('pointerdown', (ev) => { const [x, y] = at(ev); drag = pick(x, y); if (drag) { canvas.setPointerCapture(ev.pointerId); canvas.classList.add('drag'); peek.classList.remove('on'); } });
-  const end = () => { if (drag) { drag = null; canvas.classList.remove('drag'); energy = 1; } };
-  canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
-  canvas.addEventListener('pointerleave', () => { if (!drag) { hover = null; showPeek(null); } });
-  new ResizeObserver(() => { const oW = W, oH = H; size(); nodes.forEach((n) => { n.x *= W / (oW || W); n.y *= H / (oH || H); }); energy = 1; draw(0); }).observe(card);
-  new IntersectionObserver(([x]) => { visible = x.isIntersecting; }).observe(card);
-})();
+</script>
+<script type="module">
+// The hero: PlioSphere, the same module the web app uses, with a demo workspace.
+import { createSphere } from '/app/js/sphere.js';
+const data = ${GRAPH};
+const COLORS = { w: '#647BFF', r: '#83EBC0', p: '#F4D6A0' };
+const card = document.getElementById('graph-card'), peek = document.getElementById('peek'), canvas = document.getElementById('graph');
+const about = new Map(data.map(([label, , , text]) => [label, text]));
+let sphere = null;
+function show(n, x, y) {
+  if (!n) { peek.classList.remove('on'); return; }
+  const links = sphere.neighbors(n);
+  peek.innerHTML = '<b></b><span></span><small></small>';
+  peek.querySelector('b').textContent = n.title;
+  peek.querySelector('span').textContent = about.get(n.id) || '';
+  peek.querySelector('small').textContent = links + ' linked note' + (links === 1 ? '' : 's');
+  const W = card.clientWidth, H = card.clientHeight;
+  peek.style.left = Math.max(8, Math.min(W - 258, x + 18 + 250 > W ? x - 268 : x + 18)) + 'px';
+  peek.style.top = Math.max(40, Math.min(H - 150, y - 40)) + 'px';
+  peek.classList.add('on');
+}
+sphere = createSphere(canvas, {
+  nodes: data.map(([label, group]) => ({ id: label, title: label, color: COLORS[group] })),
+  edges: data.flatMap(([label, , links]) => links.map((to) => [label, to])),
+}, {
+  zoom: 1.25,
+  onHover: (n, x, y) => show(n, x, y),
+  onSelect: (n) => show(n, card.clientWidth / 2 - 125, card.clientHeight - 170),
+  onOpen: (n) => show(n, card.clientWidth / 2 - 125, card.clientHeight - 170),
+});
 </script></body></html>`);
 }

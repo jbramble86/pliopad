@@ -27,6 +27,11 @@ import app.pliopad.data.ApiException
 import app.pliopad.widget.Widgets
 import java.util.concurrent.TimeUnit
 
+/** Set while the server is down for maintenance (its message), so the app can say so instead of failing quietly. */
+object Maintenance {
+    val notice = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+}
+
 /** Background sync: every 15 minutes, and a few seconds after any local edit. Only runs with a network connection. */
 class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
@@ -37,8 +42,10 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
             for (ws in s.workspaces) if (ws.id == s.wsId || s.workspaces.size == 1) app.sync.run(ws.id)
             Reminders.scheduleAll(applicationContext, app.dao.upcomingReminders(s.wsId, System.currentTimeMillis()).map { Triple(it.id, it.title, it.reminderAt!!) })
             Widgets.refreshNow(applicationContext)
+            Maintenance.notice.value = null
             Result.success()
         } catch (e: ApiException) {
+            if (e.code == "maintenance") Maintenance.notice.value = e.message
             if (e.status == 401) Result.failure() else Result.retry()
         } catch (e: Exception) {
             Result.retry()
