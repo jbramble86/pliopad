@@ -42,10 +42,10 @@ public sealed record HomeLayout(List<string> Order, HashSet<string> Hidden)
     };
 
     /// <summary>The visible sections grouped for layout: each wide section alone, runs of the others together.</summary>
-    public List<List<string>> Groups()
+    public List<List<string>> Groups(bool includeHidden = false)
     {
         var groups = new List<List<string>>();
-        foreach (var k in Order.Where(k => !Hidden.Contains(k)))
+        foreach (var k in Order.Where(k => includeHidden || !Hidden.Contains(k)))
             if (groups.Count == 0 || Wide.Contains(k) || Wide.Contains(groups[^1][0])) groups.Add([k]);
             else groups[^1].Add(k);
         return groups;

@@ -68,6 +68,9 @@ function row(n, meta, onclick) {
 
 function empty(text) { return h('div', { class: 'hw-empty' }, text); }
 
+/** Whether Home is in edit mode (dragging sections into order). */
+let editing = false;
+
 export async function homePage(main) {
   const { order, hidden } = homeLayout();
   const notes = live();
@@ -140,7 +143,11 @@ export async function homePage(main) {
   const pinned = notes.filter((n) => n.pinned);
   const reminders = notes.filter((n) => n.reminder_at && !n.reminder_done).sort((a, b) => a.reminder_at - b.reminder_at).slice(0, 6);
   const counts = {};
-  for (const n of notes) if (n.notebook_id) counts[n.notebook_id] = (counts[n.notebook_id] || 0) + 1;
+  const lastEdit = {};
+  for (const n of notes) if (n.notebook_id) {
+    counts[n.notebook_id] = (counts[n.notebook_id] || 0) + 1;
+    lastEdit[n.notebook_id] = Math.max(lastEdit[n.notebook_id] || 0, n.updated_at);
+  }
   const edited = [...notes].sort((a, b) => b.updated_at - a.updated_at).slice(0, 8);
 
   const widgets = {
@@ -157,27 +164,16 @@ export async function homePage(main) {
         h('span', { class: 'grow', style: { minWidth: 0 } }, h('div', { class: 'ellipsis' }, label(n)),
           h('div', { class: 'hw-meta' }, d.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' }))));
     })) : empty('No upcoming reminders.')),
-    notebooks: section('notebooks', 'Notebooks', 'book', state.boot.notebooks.length ? h('div', { class: 'hw-grid' }, state.boot.notebooks.map((nb) =>
-      h('a', { class: 'hw-nb', href: `#/w/${state.wsId}/nb/${nb.id}`, style: { '--t': tint(nb.id) } }, h('span', { class: 'hw-nb-ico' }, nb.icon || '📓'),
-        h('div', { class: 'grow', style: { minWidth: 0 } }, h('div', { class: 'ellipsis' }, nb.name), h('div', { class: 'hw-meta' }, `${counts[nb.id] || 0} notes${nb.stack ? ' · ' + nb.stack : ''}`),
-          h('div', { class: 'hw-fill' }, h('span', { style: { width: Math.max(4, ((counts[nb.id] || 0) / Math.max(1, ...Object.values(counts))) * 100) + '%' } }))))))
+    // Notebooks you're working in first: a tile each, with how many notes and when you last touched it.
+    notebooks: section('notebooks', 'Notebooks', 'book', state.boot.notebooks.length ? h('div', { class: 'hw-nbs' }, [...state.boot.notebooks]
+      .sort((x, y) => (lastEdit[y.id] || 0) - (lastEdit[x.id] || 0) || x.name.localeCompare(y.name)).slice(0, 6).map((nb) =>
+        h('a', { class: 'hw-nb', href: `#/w/${state.wsId}/nb/${nb.id}`, style: { '--t': tint(nb.id) } },
+          h('span', { class: 'hw-nb-ico' }, nb.icon || '📓'),
+          h('div', { class: 'hw-nb-name' }, nb.name),
+          h('div', { class: 'hw-meta' }, counts[nb.id] ? `${counts[nb.id]} note${counts[nb.id] === 1 ? '' : 's'} · ${relTime(lastEdit[nb.id])}` : 'Empty'),
+          nb.stack ? h('div', { class: 'hw-nb-stack' }, nb.stack) : null)))
       : empty('No notebooks yet.')),
     updated: section('updated', 'Recently edited', 'clock', h('div', {}, activity(notes), ...edited.slice(0, 5).map((n) => row(n, relTime(n.updated_at) + (notebook(n.notebook_id) ? ' · ' + notebook(n.notebook_id).name : ''))))),
-  };
-
-  // Customize: show or hide each section and move it up or down. Changes apply as you make them.
-  const customize = () => {
-    const list = h('div', { class: 'home-layout' });
-    const apply = () => { saveLayout(order, hidden); draw(); homePage(main); };
-    const move = (i, d) => { [order[i], order[i + d]] = [order[i + d], order[i]]; apply(); };
-    const draw = () => list.replaceChildren(...order.map((k, i) => h('div', { class: 'home-layout-row' + (hidden.has(k) ? ' off' : '') },
-      h('label', { class: 'row grow' }, h('input', { type: 'checkbox', checked: !hidden.has(k), onchange: (e) => { if (e.target.checked) hidden.delete(k); else hidden.add(k); apply(); } }), LABEL[k]),
-      h('button', { class: 'btn icon', title: 'Move up', disabled: i === 0, onclick: () => move(i, -1) }, '↑'),
-      h('button', { class: 'btn icon', title: 'Move down', disabled: i === order.length - 1, onclick: () => move(i, 1) }, '↓'))));
-    draw();
-    import('./ui.js').then(({ modal }) => modal('Customize Home', h('div', {}, h('p', { class: 'muted', style: { marginTop: 0 } }, 'Your layout is saved to your account and used on every device.'), list), {
-      actions: [{ label: 'Reset to default', run: () => { order.splice(0, order.length, ...WIDGETS.map(([k]) => k)); hidden.clear(); apply(); return false; } }, { label: 'Done', primary: true }],
-    }));
   };
 
   const quick = [
@@ -193,22 +189,75 @@ export async function homePage(main) {
   widgets.actions = h('div', { class: 'home-quick' }, quick.map(([e, l, run]) => h('button', { class: 'home-q', onclick: run }, h('span', {}, e), l)));
   widgets.recent = section('recent', 'Jump back in', 'history', recent.length ? recentRow : empty('Pages you open show up here.'));
   // In the saved order: wide sections on their own, runs of the others side by side in two columns.
+  // While editing, hidden sections stay in place (dimmed) so they can be shown again.
   const blocks = () => {
     const out = [];
     let run = null;
-    for (const k of order.filter((k) => !hidden.has(k))) {
-      if (WIDE.has(k)) { run = null; out.push(widgets[k]); continue; }
+    for (const k of order.filter((k) => editing || !hidden.has(k))) {
+      const el = editing ? editable(k, widgets[k]) : widgets[k];
+      if (WIDE.has(k)) { run = null; out.push(el); continue; }
       if (!run) out.push(run = h('div', { class: 'home-cols' }));
-      run.append(widgets[k]);
+      run.append(el);
     }
     return out;
+  };
+
+  // ---- Edit Home: drag the real cards around the page, and hide or show them. Changes save as you go. ----
+  const save = () => { saveLayout(order, hidden); homePage(main); };
+  const editable = (k, el) => {
+    const wrap = h('div', { class: 'hw-edit' + (WIDE.has(k) ? ' wide' : '') + (hidden.has(k) ? ' off' : ''), 'data-k': k },
+      h('div', { class: 'hw-edit-tools' },
+        h('span', { class: 'hw-edit-grip', title: 'Drag to move', onpointerdown: (e) => drag(e, wrap, k) }, icon('grip'), LABEL[k]),
+        h('button', { class: 'btn icon', title: hidden.has(k) ? 'Show on Home' : 'Hide from Home', onclick: () => { if (hidden.has(k)) hidden.delete(k); else hidden.add(k); save(); } },
+          icon(hidden.has(k) ? 'eyeoff' : 'eye'))),
+      h('div', { class: 'hw-edit-body' }, el));
+    return wrap;
+  };
+  // Pointer-based, so a mouse, pen or finger all work: the card follows the pointer, and drops before or after the card under it.
+  const drag = (e, wrap, k) => {
+    e.preventDefault();
+    const x0 = e.clientX, y0 = e.clientY;
+    let target = null, after = false;
+    wrap.classList.add('dragging');
+    const clear = () => document.querySelectorAll('.hw-edit.drop-before, .hw-edit.drop-after').forEach((x) => x.classList.remove('drop-before', 'drop-after'));
+    const move = (ev) => {
+      wrap.style.transform = `translate(${ev.clientX - x0}px, ${ev.clientY - y0}px)`;
+      const over = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.hw-edit');
+      clear();
+      target = over && over !== wrap ? over : null;
+      if (target) {
+        const r = target.getBoundingClientRect();
+        after = ev.clientY > r.top + r.height / 2;
+        target.classList.add(after ? 'drop-after' : 'drop-before');
+      }
+      // Keep the page scrolling while dragging near its edges.
+      const sc = main.querySelector('.main-scroll'), sr = sc?.getBoundingClientRect();
+      if (sr && ev.clientY < sr.top + 60) sc.scrollTop -= 14; else if (sr && ev.clientY > sr.bottom - 60) sc.scrollTop += 14;
+    };
+    const up = () => {
+      removeEventListener('pointermove', move); removeEventListener('pointerup', up); removeEventListener('pointercancel', up);
+      clear();
+      wrap.classList.remove('dragging');
+      wrap.style.transform = '';
+      if (!target) return;
+      const from = order.indexOf(k);
+      order.splice(from, 1);
+      const t = order.indexOf(target.dataset.k);
+      order.splice(after ? t + 1 : t, 0, k);
+      save();
+    };
+    addEventListener('pointermove', move); addEventListener('pointerup', up); addEventListener('pointercancel', up);
   };
 
   const page = h('div', { class: 'home' },
     h('div', { class: 'home-inner' },
       h('div', { class: 'home-head' },
         h('div', { class: 'grow' }, h('div', { class: 'home-sub' }, today), h('h1', { class: 'home-title' }, name ? `Hi ${name}, here's your day` : "Here's your day")),
-        h('button', { class: 'btn icon home-custom', title: 'Customize Home', onclick: customize }, icon('gear'))),
+        editing
+          ? h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => { order.splice(0, order.length, ...WIDGETS.map(([k]) => k)); hidden.clear(); save(); } }, 'Reset'),
+            h('button', { class: 'btn primary', onclick: () => { editing = false; homePage(main); } }, 'Done'))
+          : h('button', { class: 'btn home-custom', title: 'Edit Home', onclick: () => { editing = true; homePage(main); } }, icon('pencil'), 'Edit')),
+      editing ? h('div', { class: 'home-edit-hint' }, 'Drag cards by their handle to move them, and use the eye to hide or show them. Your layout is saved to your account, so every device matches.') : null,
       ...blocks()));
 
   main.replaceChildren(h('div', { class: 'topbar' },

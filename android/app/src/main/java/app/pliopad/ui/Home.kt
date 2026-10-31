@@ -379,7 +379,8 @@ fun HomeScreen(
                     "▦  New database" to { scope.launch { open(repo.createNote(notebookId = null, useDefaultNotebook = false, kind = "db", dbSchema = DEFAULT_DB_SCHEMA)) }; Unit },
                     "🔎  Search" to { nav.navigate("search") },
                     if (s.ai) "✨  Ask AI" to { nav.navigate("ask") } else null,
-                ), onCustomize = { customizing = true }, layout = homeLayout)
+                ), layout = homeLayout, editing = customizing, onEdit = { customizing = !customizing },
+                    onLayout = { l -> homeLayout = l; scope.launch { HomePrefs.save(ctx, app.api, l) } })
                 else if (notes.isEmpty()) {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Spacer(Modifier.height(80.dp))
@@ -454,7 +455,6 @@ fun HomeScreen(
             title = { Text("Sync") }, text = { Text(msg) })
     }
 
-    if (customizing) CustomizeHomeDialog(homeLayout, onChange = { l -> homeLayout = l; scope.launch { HomePrefs.save(ctx, app.api, l) } }) { customizing = false }
 
     // ---------- Dialogs and sheets ----------
     val toast: (String) -> Unit = { Toast.makeText(ctx, it, Toast.LENGTH_SHORT).show() }

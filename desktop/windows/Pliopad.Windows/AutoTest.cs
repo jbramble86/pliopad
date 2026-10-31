@@ -38,6 +38,9 @@ public static class AutoTest
             w.AppWindow.Resize(new Windows.Graphics.SizeInt32(2300, 1350)); // wide enough for 3 widget columns
             w.Navigate(new Route("home"));
             await Shot("01-home", 1500);
+            w.CurrentHome?.SetEditing(true);
+            await Shot("01b-home-edit", 1200);
+            w.CurrentHome?.SetEditing(false);
             var work = R.Notebooks().FirstOrDefault(n => n.Name == "Work");
             var plan = R.Notes().FirstOrDefault(n => n.Title == "Q4 launch plan");
             if (work != null) { w.Navigate(new Route("notebook", work.Id), plan?.Id); await Shot("02-notebook-note"); }

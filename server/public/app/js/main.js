@@ -38,7 +38,7 @@ async function route() {
   if (first === 'invite') return inviteScreen(parts[1]);
   if (!state.token) return go('#/login');
   if (!state.me) {
-    try { state.me = await api('GET', '/me'); } catch (e) { if (e.status !== 401) toast(e.message, { error: true }); return; }
+    try { state.me = await api('GET', '/me'); } catch (e) { if (e.status !== 401) loadFailed(e); return; }
   }
   if (first === 'billing') return go(`#/w/${store.get('ws') || state.me.workspaces[0]?.id}/settings/billing`);
   if (first !== 'w' || !parts[1]) {
@@ -48,14 +48,16 @@ async function route() {
     return go(`#/w/${ws.id}/home`);
   }
   const wsId = Number(parts[1]);
+  // A bookmark or link to a workspace you're not in (any more): open one you are in instead of hanging.
+  if (!state.me.workspaces.some((w) => w.id === wsId)) { store.del('ws'); return go('#/'); }
   if (wsId !== state.wsId || !shell) {
     await closeNote();
     state.wsId = wsId;
     store.set('ws', wsId);
     try { state.boot = await wsApi('GET', '/bootstrap'); } catch (e) {
-      toast(e.message, { error: true });
+      state.wsId = null;
       if (e.status === 403 || e.status === 404) { store.del('ws'); return go('#/'); }
-      return;
+      return loadFailed(e);
     }
     buildShell();
   }
@@ -682,7 +684,7 @@ async function afterAuth(r) {
   state.me = r;
   shell = null;
   const ws = r.workspaces[0];
-  go(ws ? `#/w/${ws.id}/all` : '#/');
+  go(ws ? `#/w/${ws.id}/home` : '#/');
 }
 
 async function authScreen(kind) {
@@ -736,6 +738,15 @@ async function inviteScreen(token) {
     go(inv.has_account ? '#/login' : '#/signup');
     if (inv.has_account) toast(`Sign in to join ${inv.workspace}`);
   } catch (e) { authCard('Invitation unavailable', e.message, h('a', { class: 'btn', href: '#/login' }, 'Go to sign in')); }
+}
+
+/** Loading failed (offline, server busy, maintenance…): say so, with a retry, instead of sitting on "Loading…". */
+function loadFailed(e) {
+  if (e.code === 'maintenance') return; // the maintenance notice is already showing
+  shell = null;
+  authCard("PlioPad didn't load", e.message || 'Something went wrong.',
+    h('button', { class: 'btn primary', style: { width: '100%', justifyContent: 'center' }, onclick: () => { state.me = null; route(); } }, 'Try again'),
+    h('a', { href: '#/', onclick: (ev) => { ev.preventDefault(); store.del('ws'); state.me = null; go('#/'); } }, 'Open my workspace'));
 }
 
 function noWorkspace() {

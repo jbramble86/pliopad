@@ -150,8 +150,8 @@ public sealed partial class MainWindow : Window
         _syncTimer.Start();
         _reminders ??= new Reminders(this);
         QuickCapture.Register(this);
-        var start = R.Pref("route") is { } saved && saved.Split('|') is [var k, var a] ? new Route(k, a == "" ? null : a) : new Route("home");
-        Navigate(start, null, remember: false);
+        // PlioPad always opens on Home.
+        Navigate(new Route("home"), null, remember: false);
         if (AutoTest.Folder != null) _ = AutoTest.Run(this, _root);
     }
 
@@ -173,8 +173,6 @@ public sealed partial class MainWindow : Window
         _noteView?.Flush();
         Route = route;
         OpenNoteId = noteId;
-        if (!route.HasList && route.Kind != "note") R.SetPref("route", route.Kind + "|" + route.Arg);
-        else if (route.HasList && route.Kind != "search") R.SetPref("route", route.Kind + "|" + route.Arg);
         Render();
     }
 
@@ -237,6 +235,9 @@ public sealed partial class MainWindow : Window
             _ => EmptyPane(),
         };
     }
+
+    /// <summary>The Home page, when it is showing.</summary>
+    public HomeView? CurrentHome => _content.Content as HomeView;
 
     private UIElement EmptyPane()
     {

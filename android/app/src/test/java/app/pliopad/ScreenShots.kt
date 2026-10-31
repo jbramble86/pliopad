@@ -3,6 +3,10 @@ package app.pliopad
 import android.content.Intent
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import app.pliopad.core.Block
@@ -82,11 +86,12 @@ abstract class ScreenShotsBase {
         }
     }
 
-    protected fun shoot(device: String, name: String, intent: Intent.() -> Unit = {}) {
+    protected fun shoot(device: String, name: String, tap: String? = null, intent: Intent.() -> Unit = {}) {
         val dir = System.getProperty("shots.dir") + "/" + device
         val i = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java).apply(intent)
         ActivityScenario.launch<MainActivity>(i).use {
             repeat(3) { compose.waitForIdle(); Thread.sleep(250) }
+            tap?.let { compose.onNodeWithText(it).performClick(); repeat(2) { compose.waitForIdle(); Thread.sleep(250) } }
             compose.onRoot().captureRoboImage("$dir/$name.png")
         }
         // Just looking at screens must never create edits to sync.
@@ -105,6 +110,7 @@ class ScreenShotsPhone : ScreenShotsBase() {
     @Config(qualifiers = "w411dp-h891dp-xxhdpi")
     @Test fun phone() {
         shoot("phone", "home")
+        shoot("phone", "home-edit", tap = "Edit")
         shoot("phone", "note") { putExtra(MainActivity.EXTRA_NOTE, "33333333-3333-4333-8333-333333333333") }
         shoot("phone", "database") { putExtra(MainActivity.EXTRA_NOTE, roadmap) }
         shoot("phone", "tasks") { putExtra(MainActivity.EXTRA_ACTION, "tasks") }
@@ -190,6 +196,29 @@ class ScreenShotsUnfoldedPortrait : ScreenShotsBase() {
     @Config(qualifiers = "w673dp-h841dp-xhdpi")
     @Test fun unfoldedPortrait() {
         shoot("unfolded-portrait", "home")
+        shoot("unfolded-portrait", "home-edit", tap = "Edit")
         shoot("unfolded-portrait", "note") { putExtra(MainActivity.EXTRA_NOTE, "33333333-3333-4333-8333-333333333333") }
+    }
+}
+
+/** Edit Home: dragging a real card by its handle moves it, and the new order is kept. */
+class HomeDragTest : ScreenShotsBase() {
+    @Config(qualifiers = "w411dp-h891dp-xxhdpi")
+    @Test fun dragQuickJotAboveJumpBackIn() {
+        val i = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
+        ActivityScenario.launch<MainActivity>(i).use {
+            repeat(3) { compose.waitForIdle(); Thread.sleep(250) }
+            compose.onNodeWithText("Edit").performClick()
+            compose.waitForIdle()
+            // The first "Quick jot" is the card's handle; drag it up onto the top half of "Jump back in".
+            compose.onAllNodesWithText("Quick jot")[0].performTouchInput {
+                down(center)
+                repeat(20) { moveBy(androidx.compose.ui.geometry.Offset(0f, -30f)) }
+                up()
+            }
+            compose.waitForIdle()
+            val order = app.pliopad.ui.HomePrefs.layout(ApplicationProvider.getApplicationContext()).order
+            org.junit.Assert.assertTrue("order was $order", order.indexOf("scratch") < order.indexOf("recent"))
+        }
     }
 }

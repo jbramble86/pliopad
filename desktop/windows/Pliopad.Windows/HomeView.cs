@@ -14,6 +14,10 @@ public sealed class HomeView : ScrollPage, IRefreshable
     /// <summary>Each run of side-by-side sections: its grid and its cards, re-flowed into columns when the window resizes.</summary>
     private readonly List<(Grid Grid, List<FrameworkElement> Cards)> _runs = [];
     private int _colCount;
+    /// <summary>Edit Home: the real cards get a handle to drag them and an eye to hide or show them.</summary>
+    private bool _editing;
+    private HomeLayout _layout = HomeLayout.Default;
+    private readonly Dictionary<string, Grid> _editables = [];
     private TextBox? _scratch;
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _scratchTimer;
     public const string ScratchTitle = "Quick jot";
@@ -54,7 +58,7 @@ public sealed class HomeView : ScrollPage, IRefreshable
 
     private void Build()
     {
-        var layout = R.HomeLayout;
+        var layout = _layout = R.HomeLayout;
         var notes = R.Notes();
         var name = (R.User?.Name ?? "").Split(' ')[0];
         var page = new StackPanel { MaxWidth = 1180, Padding = new Thickness(48, 36, 48, 64), Spacing = 22 };
@@ -63,11 +67,26 @@ public sealed class HomeView : ScrollPage, IRefreshable
         head.ColumnDefinitions.Add(new ColumnDefinition());
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         head.Children.Add(V(2, T(DateTime.Now.ToString("dddd, MMMM d"), 13, "PMuted"), T(name.Length > 0 ? $"Hi {name}, here's your day" : "Here's your day", 32, bold: true)));
-        var custom = IconButton("\uE713", () => _ = Customize(), "Customize Home");
+        FrameworkElement custom;
+        if (_editing)
+        {
+            var done = new Button { Content = "Done", Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+            done.Click += (_, _) => { _editing = false; Build(); };
+            custom = H(8, Flat(T("Reset", 13), () => { _layout = HomeLayout.Default; SaveLayout(); }, pad: 8), done);
+        }
+        else custom = Flat(H(6, I("\uE70F", 13), T("Edit", 13, "PMuted")), () => { _editing = true; Build(); }, "Edit Home", 8);
         custom.VerticalAlignment = VerticalAlignment.Bottom;
         Grid.SetColumn(custom, 1);
         head.Children.Add(custom);
+        Border? hint = null;
+        if (_editing)
+        {
+            hint = new Border { Background = B("PSelected"), CornerRadius = new CornerRadius(10), Padding = new Thickness(14, 10, 14, 10),
+                Child = T("Drag cards by their handle to move them, and use the eye to hide or show them. Your layout is saved to your account, so every device matches.", 13) };
+            ((TextBlock)hint.Child).TextWrapping = TextWrapping.Wrap;
+        }
         page.Children.Add(head);
+        if (hint != null) page.Children.Add(hint);
 
         var widgets = new Dictionary<string, Func<FrameworkElement>>
         {
@@ -83,12 +102,15 @@ public sealed class HomeView : ScrollPage, IRefreshable
         };
 
         // Wide sections on their own; runs of the others side by side in columns.
+        // While editing, hidden sections stay in place (dimmed) so they can be shown again.
         _runs.Clear();
-        foreach (var group in layout.Groups())
+        _editables.Clear();
+        FrameworkElement Make(string k) => _editing ? Editable(k, widgets[k]()) : widgets[k]();
+        foreach (var group in layout.Groups(includeHidden: _editing))
         {
-            if (HomeLayout.Wide.Contains(group[0])) { page.Children.Add(widgets[group[0]]()); continue; }
+            if (HomeLayout.Wide.Contains(group[0])) { page.Children.Add(Make(group[0])); continue; }
             var grid = new Grid { ColumnSpacing = 16, RowSpacing = 16 };
-            _runs.Add((grid, group.Select(k => widgets[k]()).ToList()));
+            _runs.Add((grid, group.Select(Make).ToList()));
             page.Children.Add(grid);
         }
         Layout(_colCount == 0 ? 2 : _colCount);
@@ -262,40 +284,37 @@ public sealed class HomeView : ScrollPage, IRefreshable
         return p;
     }
 
-    private StackPanel Notebooks(List<Note> notes)
+    /// <summary>Notebooks you're working in first: a tile each, with how many notes and when you last touched it.</summary>
+    private UIElement Notebooks(List<Note> notes)
     {
-        var counts = notes.Where(n => n.NotebookId != null).GroupBy(n => n.NotebookId!).ToDictionary(g => g.Key, g => g.Count());
-        var most = Math.Max(1, counts.Values.DefaultIfEmpty(0).Max());
-        var p = new StackPanel { Spacing = 2 };
-        foreach (var nb in R.Notebooks().Take(8))
+        var byNb = notes.Where(n => n.NotebookId != null).GroupBy(n => n.NotebookId!).ToDictionary(g => g.Key, g => (Count: g.Count(), Last: g.Max(n => n.UpdatedAt)));
+        var list = R.Notebooks().OrderByDescending(nb => byNb.GetValueOrDefault(nb.Id).Last).ThenBy(nb => nb.Name, StringComparer.OrdinalIgnoreCase).Take(6).ToList();
+        if (list.Count == 0) return Empty("No notebooks yet.");
+        var grid = new Grid { ColumnSpacing = 8, RowSpacing = 8 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        for (int i = 0; i < list.Count; i++)
         {
-            var count = counts.GetValueOrDefault(nb.Id);
+            if (i % 2 == 0) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var nb = list[i];
+            var info = byNb.GetValueOrDefault(nb.Id);
             var tint = Tint(nb.Id);
-            var g = new Grid { ColumnSpacing = 10 };
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            g.ColumnDefinitions.Add(new ColumnDefinition());
-            g.Children.Add(new Border { Width = 34, Height = 34, CornerRadius = new CornerRadius(10), Background = Solid(Alpha(tint, .16)),
-                Child = new TextBlock { Text = nb.Icon ?? "📓", FontSize = 17, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } });
-            var top = new Grid();
-            top.ColumnDefinitions.Add(new ColumnDefinition());
-            top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            top.Children.Add(T(nb.Name, 14));
-            var c = T(count == 1 ? "1 note" : $"{count} notes", 12, "PFaint"); Grid.SetColumn(c, 1); top.Children.Add(c);
-            var fill = new Grid { Height = 4, Margin = new Thickness(0, 6, 0, 0) };
-            fill.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(.04, count / (double)most), GridUnitType.Star) });
-            fill.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1 - Math.Max(.04, count / (double)most) + 0.0001, GridUnitType.Star) });
-            fill.Children.Add(new Border { Background = B("PBorder"), CornerRadius = new CornerRadius(2) });
-            Grid.SetColumnSpan(fill.Children[0] as FrameworkElement, 2);
-            fill.Children.Add(new Border { Background = Solid(tint), CornerRadius = new CornerRadius(2) });
-            var info = V(0, top, fill); info.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(info, 1); g.Children.Add(info);
-            var b = Flat(g, () => _main.Navigate(new Route("notebook", nb.Id)), pad: 6);
-            b.HorizontalAlignment = HorizontalAlignment.Stretch; b.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-            b.Margin = new Thickness(-6, 0, -6, 0);
-            p.Children.Add(b);
+            var icon = new Border { Width = 32, Height = 32, CornerRadius = new CornerRadius(9), Background = Solid(Alpha(tint, .18)), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 6),
+                Child = new TextBlock { Text = nb.Icon ?? "📓", FontSize = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+            var content = V(1, icon, T(nb.Name, 13, semibold: true),
+                T(info.Count == 0 ? "Empty" : $"{info.Count} note{(info.Count == 1 ? "" : "s")} · {RelTime(info.Last)}", 12, "PMuted"),
+                nb.Stack != null ? new TextBlock { Text = nb.Stack, FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = Solid(tint), Margin = new Thickness(0, 3, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis } : null);
+            var tile = new Button
+            {
+                Content = content, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Stretch,
+                VerticalContentAlignment = VerticalAlignment.Top, MinHeight = 96, Padding = new Thickness(12, 10, 12, 10), CornerRadius = new CornerRadius(12),
+                Background = Solid(Alpha(tint, .09)), BorderBrush = Solid(Alpha(tint, .25)), BorderThickness = new Thickness(1),
+            };
+            tile.Click += (_, _) => _main.Navigate(new Route("notebook", nb.Id));
+            Grid.SetRow(tile, i / 2); Grid.SetColumn(tile, i % 2);
+            grid.Children.Add(tile);
         }
-        if (p.Children.Count == 0) p.Children.Add(Empty("No notebooks yet."));
-        return p;
+        return grid;
     }
 
     /// <summary>At a glance: how many to-dos are overdue, due today, coming up or undated.</summary>
@@ -442,37 +461,96 @@ public sealed class HomeView : ScrollPage, IRefreshable
         _main.OpenNote(id);
     }
 
-    private async Task Customize()
+    /// <summary>Turns Edit Home on or off.</summary>
+    public void SetEditing(bool on) { _editing = on; Build(); }
+
+    private void SaveLayout()
     {
-        var layout = R.HomeLayout;
-        var list = new StackPanel { MinWidth = 340 };
-        void Draw()
-        {
-            list.Children.Clear();
-            for (int i = 0; i < layout.Order.Count; i++)
-            {
-                var k = layout.Order[i];
-                var idx = i;
-                var g = new Grid();
-                g.ColumnDefinitions.Add(new ColumnDefinition());
-                g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                var cb = new CheckBox { Content = HomeLayout.Label(k), IsChecked = !layout.Hidden.Contains(k) };
-                cb.Click += (_, _) => { if (cb.IsChecked == true) layout.Hidden.Remove(k); else layout.Hidden.Add(k); Save(); };
-                g.Children.Add(cb);
-                var up = IconButton("\uE70E", () => Move(idx, -1), "Move up"); up.IsEnabled = i > 0; Grid.SetColumn(up, 1); g.Children.Add(up);
-                var down = IconButton("\uE70D", () => Move(idx, 1), "Move down"); down.IsEnabled = i < layout.Order.Count - 1; Grid.SetColumn(down, 2); g.Children.Add(down);
-                list.Children.Add(g);
-            }
-        }
-        void Move(int i, int d) { (layout.Order[i], layout.Order[i + d]) = (layout.Order[i + d], layout.Order[i]); Save(); Draw(); }
-        void Save() { _ = R.SaveHomeLayout(layout); Build(); }
-        Draw();
-        var reset = Flat(T("Reset to default", 13, "PAccent"), () => { layout = HomeLayout.Default; Save(); Draw(); }, pad: 6);
-        reset.Margin = new Thickness(-6, 8, 0, 0);
-        var note = T("Your layout is saved to your account and used on every device.", 12, "PMuted");
-        note.TextWrapping = TextWrapping.Wrap; note.Margin = new Thickness(0, 0, 0, 8);
-        await Alert(_main.Root, "Customize Home", V(0, note, list, reset));
+        _ = R.SaveHomeLayout(_layout);
+        var offset = VerticalOffset;
         Build();
+        UpdateLayout();
+        ChangeView(null, offset, null, true);
+    }
+
+    /// <summary>A card while editing: a handle to drag it, an eye to hide or show it, a dashed outline; clicks inside are blocked.</summary>
+    private Grid Editable(string k, FrameworkElement card)
+    {
+        var hidden = _layout.Hidden.Contains(k);
+        var accent = Rgb(0x647BFF);
+        var handle = new Border
+        {
+            Background = hidden ? B("PFaint") : Solid(accent), CornerRadius = new CornerRadius(13), Padding = new Thickness(8, 4, 12, 4), HorizontalAlignment = HorizontalAlignment.Left,
+            Child = H(6, new FontIcon { Glyph = "\uE76F", FontFamily = Symbols, FontSize = 12, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White) },
+                new TextBlock { Text = HomeLayout.Label(k), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White) }),
+        };
+        ToolTipService.SetToolTip(handle, "Drag to move");
+        var eye = IconButton(hidden ? "\uED1A" : "\uE7B3", () => { if (!_layout.Hidden.Remove(k)) _layout.Hidden.Add(k); SaveLayout(); }, hidden ? "Show on Home" : "Hide from Home", 14);
+        eye.HorizontalAlignment = HorizontalAlignment.Right;
+        var tools = new Grid { Margin = new Thickness(0, 0, 0, 6), Children = { handle, eye } };
+        card.Opacity = hidden ? .4 : 1;
+        var outline = new Microsoft.UI.Xaml.Shapes.Rectangle { Stroke = Solid(Alpha(accent, .5)), StrokeThickness = 1.5, StrokeDashArray = [4, 3], RadiusX = 18, RadiusY = 18, Margin = new Thickness(-4) };
+        var blocker = new Border { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) }; // keeps clicks off the card's own buttons
+        var body = new Grid { Children = { outline, card, blocker } };
+        var line = new Border { Height = 4, CornerRadius = new CornerRadius(2), Background = Solid(accent), Visibility = Visibility.Collapsed };
+        var wrap = new Grid { Tag = card.Tag, RenderTransform = new TranslateTransform() };
+        wrap.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        wrap.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        Grid.SetRow(body, 1);
+        wrap.Children.Add(tools);
+        wrap.Children.Add(body);
+        wrap.Children.Add(line);
+        wrap.Margin = new Thickness(0, 6, 0, 6);
+        _editables[k] = wrap;
+
+        // Dragging: the real card follows the pointer and drops before or after the card under it.
+        Windows.Foundation.Point start = default;
+        double startOffset = 0;
+        string? target = null;
+        var after = false;
+        handle.PointerPressed += (_, e) =>
+        {
+            handle.CapturePointer(e.Pointer);
+            start = e.GetCurrentPoint(this).Position;
+            startOffset = VerticalOffset;
+            for (FrameworkElement? el = wrap; el != null && el != this; el = el.Parent as FrameworkElement) Canvas.SetZIndex(el, 10);
+            wrap.Opacity = .92;
+            e.Handled = true;
+        };
+        handle.PointerMoved += (_, e) =>
+        {
+            if (handle.PointerCaptures?.Count is not > 0) return;
+            var p = e.GetCurrentPoint(this).Position;
+            // Keep the page scrolling while dragging near its edges.
+            if (p.Y < 70) ChangeView(null, VerticalOffset - 18, null, true); else if (p.Y > ActualHeight - 70) ChangeView(null, VerticalOffset + 18, null, true);
+            var t = (TranslateTransform)wrap.RenderTransform;
+            t.X = p.X - start.X; t.Y = p.Y - start.Y + (VerticalOffset - startOffset);
+            target = null;
+            foreach (var (key, other) in _editables)
+            {
+                ((Border)other.Children[2]).Visibility = Visibility.Collapsed;
+                if (key == k) continue;
+                var r = other.TransformToVisual(this).TransformBounds(new Windows.Foundation.Rect(0, 0, other.ActualWidth, other.ActualHeight));
+                if (!r.Contains(p)) continue;
+                target = key;
+                after = p.Y > r.Y + r.Height / 2;
+                var mark = (Border)other.Children[2];
+                Grid.SetRow(mark, after ? 1 : 0);
+                mark.VerticalAlignment = after ? VerticalAlignment.Bottom : VerticalAlignment.Top;
+                mark.Margin = after ? new Thickness(0, 0, 0, -10) : new Thickness(0, -10, 0, 0);
+                mark.Visibility = Visibility.Visible;
+            }
+        };
+        handle.PointerReleased += (_, e) =>
+        {
+            handle.ReleasePointerCapture(e.Pointer);
+            if (target != null)
+            {
+                _layout.Order.Remove(k);
+                _layout.Order.Insert(_layout.Order.IndexOf(target) + (after ? 1 : 0), k);
+            }
+            SaveLayout();
+        };
+        return wrap;
     }
 }

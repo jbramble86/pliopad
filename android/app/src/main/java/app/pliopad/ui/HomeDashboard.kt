@@ -58,6 +58,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.DragIndicator
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -77,6 +91,7 @@ import app.pliopad.PliopadApp
 import app.pliopad.core.Block
 import app.pliopad.core.Blocks
 import app.pliopad.data.NoteEntity
+import app.pliopad.data.NotebookEntity
 import app.pliopad.data.SessionData
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
@@ -143,34 +158,81 @@ object HomePrefs {
     }
 }
 
-/** Customize Home: show or hide each section and move it up or down. Changes apply as you make them. */
+/** Edit Home: which card is being dragged, where the finger is, and where it would land. */
+private class HomeDrag {
+    var key by mutableStateOf<String?>(null)
+    var pointer by mutableStateOf(androidx.compose.ui.geometry.Offset.Zero)
+    var start = androidx.compose.ui.geometry.Offset.Zero
+    var scrolled by mutableFloatStateOf(0f)
+    var target by mutableStateOf<Pair<String, Boolean>?>(null) // key, drop after it
+    val bounds = mutableMapOf<String, androidx.compose.ui.geometry.Rect>()
+    val handles = mutableMapOf<String, androidx.compose.ui.geometry.Offset>()
+    var viewport = androidx.compose.ui.geometry.Rect.Zero
+}
+
+/**
+ * A Home card while editing: a handle to drag it (the real card follows your finger and drops before or after the card under it),
+ * an eye to hide or show it, and a dimmed look when hidden. Taps inside the card are blocked so dragging never opens anything.
+ */
 @Composable
-fun CustomizeHomeDialog(layout: HomeLayout, onChange: (HomeLayout) -> Unit, onDismiss: () -> Unit) {
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Customize Home") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("Your layout is saved to your account and used on every device.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp))
-                layout.order.forEachIndexed { i, k ->
-                    val shown = k !in layout.hidden
-                    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(shown, { onChange(layout.copy(hidden = if (shown) layout.hidden + k else layout.hidden - k)) })
-                        Text(HomePrefs.LABEL[k] ?: k, Modifier.weight(1f), color = if (shown) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-                        IconButton(onClick = { onChange(layout.copy(order = layout.order.toMutableList().apply { add(i - 1, removeAt(i)) })) }, enabled = i > 0) {
-                            Icon(Icons.Default.KeyboardArrowUp, "Move up")
-                        }
-                        IconButton(onClick = { onChange(layout.copy(order = layout.order.toMutableList().apply { add(i + 1, removeAt(i)) })) }, enabled = i < layout.order.size - 1) {
-                            Icon(Icons.Default.KeyboardArrowDown, "Move down")
-                        }
-                    }
-                }
+private fun EditableSection(k: String, drag: HomeDrag, layout: HomeLayout, onLayout: (HomeLayout) -> Unit, content: @Composable () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val hidden = k in layout.hidden
+    val dragging = drag.key == k
+    val target = drag.target?.takeIf { it.first == k }
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp)
+        .onGloballyPositioned { if (!dragging) drag.bounds[k] = it.boundsInRoot() }
+        .zIndex(if (dragging) 1f else 0f)
+        .graphicsLayer {
+            if (dragging) { translationX = drag.pointer.x - drag.start.x; translationY = drag.pointer.y - drag.start.y + drag.scrolled; alpha = .92f; shadowElevation = 16f }
+        }
+        .drawBehind {
+            if (target != null) {
+                val y = if (target.second) size.height + 6.dp.toPx() else -4.dp.toPx()
+                drawLine(cs.primary, androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Offset(size.width, y), 4.dp.toPx())
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-        dismissButton = { TextButton(onClick = { onChange(HomePrefs.DEFAULT) }) { Text("Reset") } },
-    )
+        }) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.background(if (hidden) cs.outline else cs.primary, RoundedCornerShape(14.dp))
+                .onGloballyPositioned { if (!dragging) drag.handles[k] = it.positionInRoot() }
+                .pointerInput(k) {
+                    detectDragGestures(
+                        onDragStart = { at -> drag.key = k; drag.start = (drag.handles[k] ?: androidx.compose.ui.geometry.Offset.Zero) + at; drag.pointer = drag.start; drag.scrolled = 0f },
+                        onDrag = { change, amount ->
+                            change.consume()
+                            drag.pointer += amount
+                            val over = drag.bounds.entries.firstOrNull { (key, r) -> key != k && r.contains(drag.pointer) }
+                            drag.target = over?.let { it.key to (drag.pointer.y > it.value.center.y) }
+                        },
+                        onDragEnd = {
+                            drag.target?.let { (t, after) ->
+                                val order = layout.order.filter { it != k }.toMutableList()
+                                order.add(order.indexOf(t) + if (after) 1 else 0, k)
+                                onLayout(layout.copy(order = order))
+                            }
+                            drag.key = null; drag.target = null
+                        },
+                        onDragCancel = { drag.key = null; drag.target = null },
+                    )
+                }
+                .padding(start = 8.dp, end = 12.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.DragIndicator, "Drag to move", Modifier.size(16.dp), tint = Color.White)
+                Text(HomePrefs.LABEL[k] ?: k, Modifier.padding(start = 4.dp), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = { onLayout(layout.copy(hidden = if (hidden) layout.hidden - k else layout.hidden + k)) }, modifier = Modifier.size(32.dp)) {
+                Icon(if (hidden) Icons.Default.VisibilityOff else Icons.Default.Visibility, if (hidden) "Show on Home" else "Hide from Home", Modifier.size(18.dp), tint = cs.onSurfaceVariant)
+            }
+        }
+        Box(Modifier.fillMaxWidth().drawBehind {
+            drawRoundRect(cs.primary.copy(alpha = .45f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(18.dp.toPx()),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f))))
+        }.padding(4.dp)) {
+            Box(Modifier.graphicsLayer { alpha = if (hidden) .4f else 1f }) { content() }
+            // Blocks taps on the card's own buttons and links while editing.
+            Box(Modifier.matchParentSize().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } })
+        }
+    }
 }
 
 const val SCRATCH_TITLE = "Quick jot"
@@ -242,6 +304,20 @@ private fun Activity(all: List<NoteEntity>) {
     }
 }
 
+/** A notebook as a tile: icon, name, notes and last activity, and its collection. */
+@Composable
+private fun NotebookTile(nb: NotebookEntity, meta: String, modifier: Modifier, onClick: () -> Unit) {
+    val t = tint(nb.id)
+    Surface(onClick = onClick, shape = RoundedCornerShape(12.dp), color = t.copy(alpha = .09f), border = BorderStroke(1.dp, t.copy(alpha = .25f)), modifier = modifier.heightIn(min = 96.dp)) {
+        Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 10.dp)) {
+            Box(Modifier.size(32.dp).background(t.copy(alpha = .18f), RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) { Text(nb.icon ?: "📓", fontSize = 16.sp) }
+            Text(nb.name, Modifier.padding(top = 8.dp), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(meta, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            nb.stack?.let { Text(it, Modifier.padding(top = 4.dp), fontSize = 11.sp, fontWeight = FontWeight.Medium, color = t, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
+    }
+}
+
 /** A pinned note as a small coloured tile. */
 @Composable
 private fun PinTile(n: NoteEntity, modifier: Modifier, onClick: () -> Unit) {
@@ -279,7 +355,7 @@ private fun ReminderLine(n: NoteEntity, onClick: () -> Unit) {
 @Composable
 fun HomeDashboard(
     app: PliopadApp, s: SessionData, onOpen: (String) -> Unit, onList: (String, String) -> Unit, onCreate: () -> Unit,
-    quickActions: List<Pair<String, () -> Unit>>, onCustomize: () -> Unit, layout: HomeLayout,
+    quickActions: List<Pair<String, () -> Unit>>, layout: HomeLayout, editing: Boolean, onEdit: () -> Unit, onLayout: (HomeLayout) -> Unit,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -329,22 +405,16 @@ fun HomeDashboard(
         },
         Widget("notebooks", "Notebooks", Icons.AutoMirrored.Filled.MenuBook) {
             if (notebooks.isEmpty()) Empty("No notebooks yet.")
-            val counts = notebooks.associate { nb -> nb.id to all.count { it.notebookId == nb.id } }
-            val most = (counts.values.maxOrNull() ?: 0).coerceAtLeast(1)
-            notebooks.take(8).forEach { nb ->
-                val count = counts[nb.id] ?: 0
-                val t = tint(nb.id)
-                Row(Modifier.fillMaxWidth().clickable { onList("nb", nb.id) }.heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(34.dp).background(t.copy(alpha = .16f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) { Text(nb.icon ?: "📓", fontSize = 17.sp) }
-                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(nb.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
-                            Text(if (count == 1) "1 note" else "$count notes", fontSize = 12.sp, color = cs.onSurfaceVariant)
-                        }
-                        Box(Modifier.padding(top = 5.dp).fillMaxWidth().height(4.dp).background(cs.outlineVariant.copy(alpha = .5f), RoundedCornerShape(2.dp))) {
-                            Box(Modifier.fillMaxWidth((count.toFloat() / most).coerceAtLeast(.04f)).fillMaxHeight().background(t, RoundedCornerShape(2.dp)))
-                        }
+            // Notebooks you're working in first: a tile each, with how many notes and when you last touched it.
+            val byNb = all.filter { it.notebookId != null }.groupBy { it.notebookId!! }
+            val last = byNb.mapValues { (_, ns) -> ns.maxOf { it.updatedAt } }
+            notebooks.sortedWith(compareByDescending<NotebookEntity> { last[it.id] ?: 0L }.thenBy { it.name.lowercase() }).take(6).chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    pair.forEach { nb ->
+                        val count = byNb[nb.id]?.size ?: 0
+                        NotebookTile(nb, if (count == 0) "Empty" else (if (count == 1) "1 note" else "$count notes") + " · " + relative(last[nb.id]!!), Modifier.weight(1f)) { onList("nb", nb.id) }
                     }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
         },
@@ -358,7 +428,18 @@ fun HomeDashboard(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val roomy = maxWidth >= 600.dp
         val columns = when { maxWidth >= 1050.dp -> 3; maxWidth >= 600.dp -> 2; else -> 1 }
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+        val scroll = rememberScrollState()
+        val drag = remember { HomeDrag() }
+        // While a card is dragged near the top or bottom edge, keep scrolling so it can reach the whole page.
+        LaunchedEffect(drag.key) {
+            while (drag.key != null) {
+                val edge = 90f
+                val dy = when { drag.pointer.y < drag.viewport.top + edge -> -18f; drag.pointer.y > drag.viewport.bottom - edge -> 18f; else -> 0f }
+                if (dy != 0f) drag.scrolled += scroll.scrollBy(dy)
+                kotlinx.coroutines.delay(16)
+            }
+        }
+        Column(Modifier.fillMaxSize().onGloballyPositioned { drag.viewport = it.boundsInRoot() }.verticalScroll(scroll), horizontalAlignment = Alignment.CenterHorizontally) {
             Column(Modifier.widthIn(max = 1040.dp).fillMaxWidth().padding(horizontal = if (roomy) 32.dp else 16.dp).padding(top = 8.dp, bottom = if (LocalPill.current != null) PillClearance else 40.dp)) {
                 // The greeting is the page title (the top bar stays empty on Home).
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -367,39 +448,55 @@ fun HomeDashboard(
                         Text(if (first.isNotBlank()) "Hi $first, here's your day" else "Here's your day", fontSize = if (roomy) 30.sp else 26.sp, lineHeight = if (roomy) 36.sp else 31.sp,
                             fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 2.dp))
                     }
-                    IconButton(onClick = onCustomize) { Icon(Icons.Default.Tune, "Customize Home", tint = cs.onSurfaceVariant) }
+                    if (!editing) TextButton(onClick = onEdit) { Icon(Icons.Default.Edit, null, Modifier.size(16.dp)); Text("Edit", Modifier.padding(start = 6.dp)) }
                 }
+                if (editing) Surface(shape = RoundedCornerShape(12.dp), color = cs.primaryContainer.copy(alpha = .6f), modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) {
+                    Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Drag cards by their handle to move them; use the eye to hide or show them. Saved to your account, so every device matches.",
+                            Modifier.weight(1f), fontSize = 12.sp, lineHeight = 16.sp)
+                        TextButton(onClick = { onLayout(HomePrefs.DEFAULT) }) { Text("Reset") }
+                        androidx.compose.material3.Button(onClick = onEdit) { Text("Done") }
+                    }
+                }
+                // Each section, editable while editing.
+                @Composable fun Section(k: String, content: @Composable () -> Unit) = if (editing) EditableSection(k, drag, layout, onLayout, content) else content()
                 // Sections in the saved order: wide ones on their own, runs of the others as cards in 1–3 columns.
+                // While editing, hidden ones stay in place (dimmed) so they can be shown again.
                 val groups = mutableListOf<List<String>>()
-                for (k in layout.order.filter { it !in layout.hidden }) {
+                for (k in layout.order.filter { editing || it !in layout.hidden }) {
                     val last = groups.lastOrNull()
                     if (last == null || k in HomePrefs.WIDE || last.first() in HomePrefs.WIDE) groups += listOf(k) else groups[groups.lastIndex] = last + k
                 }
                 groups.forEach { group ->
                     when (group.first()) {
                         // Quick actions wrap onto a second line instead of running off the edge.
-                        "actions" -> FlowRow(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            quickActions.forEachIndexed { i, (label, run) ->
-                                Surface(onClick = run, shape = RoundedCornerShape(20.dp), color = if (i == 0) cs.primary else cs.surfaceVariant.copy(alpha = .7f)) {
-                                    Text(label, Modifier.padding(horizontal = 14.dp, vertical = 9.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium,
-                                        color = if (i == 0) cs.onPrimary else cs.onSurface)
+                        "actions" -> Section("actions") {
+                            FlowRow(Modifier.fillMaxWidth().padding(top = if (editing) 0.dp else 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                quickActions.forEachIndexed { i, (label, run) ->
+                                    Surface(onClick = run, shape = RoundedCornerShape(20.dp), color = if (i == 0) cs.primary else cs.surfaceVariant.copy(alpha = .7f)) {
+                                        Text(label, Modifier.padding(horizontal = 14.dp, vertical = 9.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                            color = if (i == 0) cs.onPrimary else cs.onSurface)
+                                    }
                                 }
                             }
                         }
-                        "recent" -> if (recent.isNotEmpty()) {
-                            SectionLabel(Icons.Default.History, "Jump back in", Modifier.padding(top = 28.dp, bottom = 10.dp))
-                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                recent.forEach { n -> RecentCard(n) { onOpen(n.id) } }
+                        "recent" -> if (recent.isNotEmpty() || editing) Section("recent") {
+                            Column {
+                                SectionLabel(Icons.Default.History, "Jump back in", Modifier.padding(top = if (editing) 4.dp else 28.dp, bottom = 10.dp))
+                                if (recent.isEmpty()) Empty("Notes you open show up here.")
+                                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    recent.forEach { n -> RecentCard(n) { onOpen(n.id) } }
+                                }
                             }
                         }
                         else -> {
                             val cards = group.mapNotNull { widgets[it] }
-                            Spacer(Modifier.height(24.dp))
+                            Spacer(Modifier.height(if (editing) 4.dp else 24.dp))
                             val cols = columns.coerceAtMost(cards.size.coerceAtLeast(1))
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                 for (c in 0 until cols) {
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                                        cards.filterIndexed { i, _ -> i % cols == c }.forEach { WidgetCard(it) }
+                                        cards.filterIndexed { i, _ -> i % cols == c }.forEach { w -> Section(w.key) { WidgetCard(w) } }
                                     }
                                 }
                             }
