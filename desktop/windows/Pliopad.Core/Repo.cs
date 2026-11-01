@@ -140,18 +140,29 @@ public sealed class Repo
 
     private void SetStatus(string s) { SyncStatus = s; SyncStatusChanged?.Invoke(); }
 
-    public async Task SyncNow()
+    // While the host's firewall is blocking this PC, automatic syncs pause (retrying every 45 seconds keeps the block going).
+    private DateTime _blockedUntil = DateTime.MinValue;
+
+    /// <summary>Syncs now. Automatic (timer) syncs wait while the firewall is blocking this PC; asking for a sync (F5) always tries.</summary>
+    public async Task SyncNow(bool automatic = false)
     {
         if (!SignedIn) return;
+        if (automatic && DateTime.UtcNow < _blockedUntil) return;
         if (!await _syncLock.WaitAsync(0)) return;
         try
         {
             SetStatus("Syncing…");
             var changed = await _sync.Run(WsId);
+            _blockedUntil = DateTime.MinValue;
             SetStatus("Synced " + DateTime.Now.ToString("t"));
             if (changed > 0) Store.NotifyChanged();
         }
         catch (ApiException e) when (e.Status == 401) { SetStatus("Signed out"); await SignOut(); }
+        catch (ApiException e) when (e.Code == "blocked")
+        {
+            _blockedUntil = DateTime.UtcNow.AddMinutes(10);
+            SetStatus("pliopad.com's firewall is blocking this PC. Changes are saved here; trying again in 10 minutes (F5 to try now).");
+        }
         catch (ApiException e) when (e.Code == "maintenance") { SetStatus("PlioPad is down for maintenance — changes are saved on this PC"); }
         catch (Exception e) { SetStatus(e is HttpRequestException ? "Offline — changes are saved on this PC" : "Sync failed: " + e.Message); }
         finally { _syncLock.Release(); }

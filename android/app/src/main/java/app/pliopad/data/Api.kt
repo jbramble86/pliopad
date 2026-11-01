@@ -97,6 +97,9 @@ class Api(private val server: () -> String, private val token: () -> String?) {
             .build()
         http.newCall(req).execute().use { res ->
             val text = res.body?.string().orEmpty()
+            // The host's bot protection (SiteGround's CAPTCHA, or its firewall's HTML 403) answered instead of PlioPad.
+            if (res.header("SG-Captcha") != null || (res.code == 403 && !text.trimStart().startsWith("{")))
+                throw ApiException(res.code, "pliopad.com's firewall is blocking this device. Your changes are saved on the phone and will sync once it lets PlioPad through.", "blocked")
             if (!res.isSuccessful) {
                 val err = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull()
                 throw ApiException(res.code, err?.get("error")?.jsonPrimitive?.contentOrNull ?: "Request failed (${res.code})", err?.get("code")?.jsonPrimitive?.contentOrNull)

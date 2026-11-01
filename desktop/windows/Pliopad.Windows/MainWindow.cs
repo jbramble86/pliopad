@@ -85,7 +85,7 @@ public sealed partial class MainWindow : Window
 
         R.Store.Changed += QueueRefresh;
         R.SyncStatusChanged += () => DispatcherQueue.TryEnqueue(() => _syncLabel.Text = R.SyncStatus);
-        _syncTimer = new DispatcherQueueTimerWrapper(DispatcherQueue, TimeSpan.FromSeconds(45), () => _ = R.SyncNow());
+        _syncTimer = new DispatcherQueueTimerWrapper(DispatcherQueue, TimeSpan.FromSeconds(45), () => _ = R.SyncNow(automatic: true));
         // Coming back to the window syncs, but at most once a minute (focus changes are frequent).
         var lastFocusSync = DateTime.MinValue;
         Activated += (_, e) =>

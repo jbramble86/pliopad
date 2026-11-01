@@ -30,6 +30,13 @@ export async function api(method, path, body) {
   } catch {
     throw new ApiError(0, 'You appear to be offline. Changes will be saved when the connection returns.', 'offline');
   }
+  // The host's bot check (SiteGround's CAPTCHA) answered instead of PlioPad: reloading lets the browser pass it (once a minute at most).
+  if (res.headers.get('sg-captcha')) {
+    let last = 0;
+    try { last = Number(sessionStorage.getItem('captchaReload')) || 0; sessionStorage.setItem('captchaReload', String(Date.now())); } catch { /* private mode */ }
+    if (Date.now() - last > 60000) location.reload();
+    throw new ApiError(res.status, 'pliopad.com is checking this browser. If this keeps happening, reload the page.', 'blocked');
+  }
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && data.code === 'auth') onUnauthorized();
   if (res.status === 503 && data.code === 'maintenance') showMaintenance(data.error, data.until);

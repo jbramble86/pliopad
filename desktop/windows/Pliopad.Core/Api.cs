@@ -40,6 +40,13 @@ public sealed partial class Api(Func<string> server, Func<string?> token)
         req.Headers.Accept.ParseAdd("application/json");
         using var res = await Http.SendAsync(req).ConfigureAwait(false);
         var text = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
+        // The host's bot protection (SiteGround's CAPTCHA, or its firewall's HTML 403) answered instead of PlioPad.
+        var captcha = res.Headers.Contains("SG-Captcha");
+        if (captcha || ((int)res.StatusCode == 403 && !text.TrimStart().StartsWith('{')))
+        {
+            Log?.Invoke($"{DateTime.Now:u} {method} {path} -> {(int)res.StatusCode} {(captcha ? "SG-Captcha challenge" : "firewall")} server={res.Headers.Server}");
+            throw new ApiException((int)res.StatusCode, "pliopad.com's firewall is blocking this PC", "blocked");
+        }
         if (!res.IsSuccessStatusCode)
         {
             string? msg = null, code = null;

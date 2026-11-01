@@ -157,6 +157,8 @@ export const server = http.createServer(async (req, res) => {
       if (p === '/install' && req.method === 'POST') return install(req, res);
       if (p.startsWith('/app') || p.startsWith('/admin') || p === '/' || p === '/install') return renderInstaller(res, '', DATA_DIR_SEARCHED);
     }
+    // Just started (SiteGround restarts idle apps): give the database a few seconds to connect instead of turning the request away.
+    if (isInstalled() && !dbReady && !dbError) for (let i = 0; i < 50 && !dbReady && !dbError; i++) await new Promise((r) => setTimeout(r, 200));
     if (isInstalled() && !dbReady) {
       // Only the error code is shown publicly; the full message is in logs/startup.log.
       const code = dbError ? String(dbError.code || dbError.name || 'error') : 'starting';

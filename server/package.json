@@ -1,6 +1,6 @@
 {
   "name": "pliopad-server",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "description": "PlioPad: notes and docs (Evernote + Notion style) — API, web app and admin console.",
   "type": "module",
