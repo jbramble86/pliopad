@@ -76,7 +76,9 @@ class ApiException(val status: Int, message: String, val code: String? = null) :
 @Serializable data class TicketMessage(val id: Long, val staff: Boolean = false, val author: String? = null, val body: String, val created_at: Long,
     val files: List<SupportFile> = emptyList())
 @Serializable data class Ticket(val id: Long, val subject: String, val status: String, val created_at: Long, val updated_at: Long,
-    val unread: Boolean = false, val rating: String? = null, val messages: List<TicketMessage> = emptyList())
+    val unread: Boolean = false, val rating: String? = null, val article: TicketArticle? = null, val messages: List<TicketMessage> = emptyList())
+/** The help article a request was asked from. */
+@Serializable data class TicketArticle(val id: String, val title: String)
 @Serializable data class AiResult(val markdown: String? = null, val blocks: List<Block> = emptyList(), val tags: List<String> = emptyList())
 
 /** Thin client for the Pliopad REST API. */
@@ -133,11 +135,13 @@ class Api(private val server: () -> String, private val token: () -> String?) {
     suspend fun help(): HelpData = json.decodeFromString(HelpData.serializer(), call("GET", "/help", auth = null))
     suspend fun tickets(): List<Ticket> = json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(Ticket.serializer()), call("GET", "/support/tickets"))
     suspend fun ticket(id: Long): Ticket = json.decodeFromString(Ticket.serializer(), call("GET", "/support/tickets/$id"))
-    suspend fun openTicket(subject: String, body: String, category: String, ws: Long?, version: String, files: List<String> = emptyList()): Ticket =
+    suspend fun openTicket(subject: String, body: String, category: String, ws: Long?, version: String, files: List<String> = emptyList(), articleId: String? = null): Ticket =
         json.decodeFromString(Ticket.serializer(), call("POST", "/support/tickets", buildJsonObject {
             put("subject", subject); put("body", body); put("category", category); put("platform", "Android"); put("app_version", version); ws?.let { put("workspace_id", it) }
-            put("files", JsonArray(files.map { JsonPrimitive(it) }))
+            put("files", JsonArray(files.map { JsonPrimitive(it) })); articleId?.let { put("article_id", it) }
         }))
+    /** "Did this help?" for a help article. */
+    suspend fun helpFeedback(articleId: String, helpful: Boolean) { call("POST", "/help/$articleId/feedback", buildJsonObject { put("helpful", helpful) }) }
     suspend fun replyTicket(id: Long, body: String, files: List<String> = emptyList()): Ticket = json.decodeFromString(Ticket.serializer(),
         call("POST", "/support/tickets/$id/messages", buildJsonObject { put("body", body); put("files", JsonArray(files.map { JsonPrimitive(it) })) }))
     suspend fun rateTicket(id: Long, rating: String): Ticket = json.decodeFromString(Ticket.serializer(), call("POST", "/support/tickets/$id/rate", buildJsonObject { put("rating", rating) }))

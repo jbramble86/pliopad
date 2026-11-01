@@ -18,7 +18,8 @@ public sealed record TicketMessage([property: JsonPropertyName("id")] long Id, [
     [property: JsonPropertyName("files")] List<SupportFile>? Files);
 public sealed record Ticket([property: JsonPropertyName("id")] long Id, [property: JsonPropertyName("subject")] string Subject,
     [property: JsonPropertyName("status")] string Status, [property: JsonPropertyName("created_at")] long CreatedAt, [property: JsonPropertyName("updated_at")] long UpdatedAt,
-    [property: JsonPropertyName("unread")] bool Unread, [property: JsonPropertyName("rating")] string? Rating, [property: JsonPropertyName("messages")] List<TicketMessage>? Messages)
+    [property: JsonPropertyName("unread")] bool Unread, [property: JsonPropertyName("rating")] string? Rating, [property: JsonPropertyName("messages")] List<TicketMessage>? Messages,
+    [property: JsonPropertyName("article")] TicketArticle? Article = null)
 {
     public static readonly Dictionary<string, string> StatusNames = new() { ["open"] = "Waiting for support", ["answered"] = "Support replied", ["on_hold"] = "On hold", ["closed"] = "Solved" };
     public string StatusName => StatusNames.GetValueOrDefault(Status, Status);
@@ -42,6 +43,9 @@ public sealed record AppBuild([property: JsonPropertyName("id")] string Id, [pro
     }
 }
 
+/// <summary>The help article a request was asked from.</summary>
+public sealed record TicketArticle([property: JsonPropertyName("id")] string Id, [property: JsonPropertyName("title")] string Title);
+
 public sealed partial class Api
 {
     public async Task<List<AppBuild>> Downloads() => Decode<List<AppBuild>>(await Call(HttpMethod.Get, "/downloads", auth: false));
@@ -50,12 +54,15 @@ public sealed partial class Api
     public async Task<List<Ticket>> Tickets() => Decode<List<Ticket>>(await Call(HttpMethod.Get, "/support/tickets"));
     public async Task<Ticket> Ticket(long id) => Decode<Ticket>(await Call(HttpMethod.Get, $"/support/tickets/{id}"));
 
-    public async Task<Ticket> OpenTicket(string subject, string body, string category, long? ws, string version, IEnumerable<string> files) =>
+    public async Task<Ticket> OpenTicket(string subject, string body, string category, long? ws, string version, IEnumerable<string> files, string? articleId = null) =>
         Decode<Ticket>(await Call(HttpMethod.Post, "/support/tickets", new JsonObject
         {
             ["subject"] = subject, ["body"] = body, ["category"] = category, ["platform"] = "Windows", ["app_version"] = version, ["workspace_id"] = ws,
-            ["files"] = new JsonArray(files.Select(f => (JsonNode?)f).ToArray()),
+            ["files"] = new JsonArray(files.Select(f => (JsonNode?)f).ToArray()), ["article_id"] = articleId,
         }));
+
+    /// <summary>"Did this help?" for a help article.</summary>
+    public Task HelpFeedback(string articleId, bool helpful) => Call(HttpMethod.Post, $"/help/{Uri.EscapeDataString(articleId)}/feedback", new JsonObject { ["helpful"] = helpful });
 
     public async Task<Ticket> ReplyTicket(long id, string body, IEnumerable<string> files) =>
         Decode<Ticket>(await Call(HttpMethod.Post, $"/support/tickets/{id}/messages", new JsonObject { ["body"] = body, ["files"] = new JsonArray(files.Select(f => (JsonNode?)f).ToArray()) }));

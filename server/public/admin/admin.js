@@ -280,7 +280,8 @@ async function support(id) {
     drawComposer();
     pane.replaceChildren(
       h('div', { class: 'tk-head' }, h('div', { class: 'grow' }, h('h2', {}, t.subject),
-        h('div', { class: 'muted' }, `#${t.id} · ${t.category || 'question'} · opened ${fmtDate(t.created_at)} · ${t.platform || 'Web'}${t.app_version ? ' ' + t.app_version : ''}`))),
+        h('div', { class: 'muted' }, `#${t.id} · ${t.category || 'question'} · opened ${fmtDate(t.created_at)} · ${t.platform || 'Web'}${t.app_version ? ' ' + t.app_version : ''}`),
+        t.article ? h('div', { class: 'tk-from' }, '📄 Asked from the help article ', h('a', { href: '#/help/' + t.article.id }, t.article.title)) : null)),
       h('div', { class: 'tk-controls' },
         h('label', {}, 'Status', selectOf(Object.entries(TICKET_STATUS).map(([k, [l]]) => [k, l]), t.status, (v) => update({ status: v }))),
         h('label', {}, 'Priority', selectOf(Object.entries(PRIORITY).map(([k, l]) => [k, l]), t.priority, (v) => update({ priority: v }))),
@@ -314,6 +315,14 @@ async function support(id) {
 
 // ---------- Help articles: what every app's Help center shows ----------
 
+/** How helpful readers found an article ("Did this help?"), as a small badge. */
+function score(a) {
+  const total = (a.helpful || 0) + (a.not_helpful || 0);
+  if (!total) return null;
+  const pct = Math.round((a.helpful / total) * 100);
+  return h('span', { class: 'hc-score ' + (pct >= 70 ? 'good' : pct >= 40 ? 'mid' : 'bad'), title: `${a.helpful} found it helpful, ${a.not_helpful} didn’t · ${a.requests || 0} support requests asked from it` }, pct + '%');
+}
+
 async function helpArticles(openId) {
   const { articleBody } = await import('/app/js/support-ui.js');
   let data = await api('GET', '/admin/help');
@@ -340,7 +349,7 @@ async function helpArticles(openId) {
         h('button', { class: 'btn icon sm', title: 'Move down', disabled: ci === data.categories.length - 1, onclick: () => move(data.categories, ci, 1, 'categories') }, '↓'),
         h('button', { class: 'btn icon sm', title: 'Rename or change icon', onclick: () => editCategory(c) }, icon('gear'))),
       ...arts.map((a, ai) => h('div', { class: 'hc-row' + (current?.id === a.id ? ' active' : ''), onclick: () => guard() && open(a) },
-        h('span', { class: 'grow ellipsis' }, a.title), a.published ? null : h('span', { class: 'badge' }, 'Draft'),
+        h('span', { class: 'grow ellipsis' }, a.title), a.published ? null : h('span', { class: 'badge' }, 'Draft'), score(a),
         h('button', { class: 'btn icon sm', title: 'Move up', disabled: ai === 0, onclick: (e) => { e.stopPropagation(); move(arts, ai, -1, 'articles'); } }, '↑'),
         h('button', { class: 'btn icon sm', title: 'Move down', disabled: ai === arts.length - 1, onclick: (e) => { e.stopPropagation(); move(arts, ai, 1, 'articles'); } }, '↓'))),
       arts.length ? null : h('div', { class: 'muted', style: { fontSize: '12.5px', padding: '4px 8px' } }, 'No articles yet.'));
@@ -384,7 +393,8 @@ async function helpArticles(openId) {
       h('div', { class: 'row', style: { gap: '14px', margin: '10px 0', flexWrap: 'wrap' } },
         h('label', { class: 'row', style: { gap: '6px' } }, h('span', { class: 'muted' }, 'Category'), cat),
         h('label', { class: 'row', style: { gap: '6px' } }, pub, 'Published', h('span', { class: 'muted' }, '(drafts are only visible here)')),
-        a.id ? h('span', { class: 'muted', style: { fontSize: '12.5px' } }, 'Link: /app/#/help/a/' + a.id) : null),
+        a.id ? h('span', { class: 'muted', style: { fontSize: '12.5px' } }, 'Link: /app/#/help/a/' + a.id) : null,
+        a.id ? h('span', { class: 'muted', style: { fontSize: '12.5px' } }, `Did this help? 👍 ${a.helpful || 0} · 👎 ${a.not_helpful || 0} · ${a.requests || 0} support request${a.requests === 1 ? '' : 's'} asked from it`) : null),
       h('div', { class: 'hc-edit' },
         h('div', {}, body, h('div', { class: 'muted', style: { fontSize: '12px', marginTop: '6px' } },
           'Leave a blank line between paragraphs. Start lines with “- ” for bullets or “1. ” for numbered steps.')),

@@ -535,3 +535,8 @@ section.hw[data-w="recent"] .hw-badge { width: 22px; height: 22px; border-radius
 .sp-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .sp-thumb img { display: block; max-width: 240px; max-height: 170px; border-radius: 8px; border: 1px solid var(--line); }
 .sp-file { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); font-size: 13px; color: var(--fg); }
+
+.help-vote { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 22px 0 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
+.help-about { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-radius: 10px; background: var(--accent-soft); margin-bottom: 12px; font-size: 13.5px; }
+.help-about:empty { display: none; } .help-about svg.i { flex: none; }
+.help-contact[hidden] { display: none; }

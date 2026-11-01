@@ -30,9 +30,31 @@ route('GET', '/api/help', async () => {
   return { categories: categories.filter((c) => articles.some((a) => a.category === c.id)), articles: articles.map(({ published, ...a }) => a) };
 });
 
+/** "Did this help?" One answer per person per article; answering again changes it. */
+route('POST', '/api/help/:id/feedback', async (ctx) => {
+  const u = await A.requireUser(ctx);
+  if (!(await db.val('SELECT 1 FROM help_articles WHERE id=?', [ctx.params.id]))) throw new ApiError(404, 'Article not found.');
+  await db.q('DELETE FROM help_feedback WHERE article_id=? AND user_id=?', [ctx.params.id, u.id]);
+  await db.insert('help_feedback', { article_id: ctx.params.id, user_id: u.id, helpful: ctx.body.helpful ? 1 : 0, created_at: nowMs() });
+  return { ok: true };
+});
+
 // ---------- Admin ----------
 
-route('GET', '/api/admin/help', async (ctx) => { await A.requireSuper(ctx); return all({ drafts: true }); });
+route('GET', '/api/admin/help', async (ctx) => {
+  await A.requireSuper(ctx);
+  const data = await all({ drafts: true });
+  // How each article is doing: "Did this help?" answers, and requests asked from it.
+  const votes = await db.all('SELECT article_id, SUM(helpful) AS yes, COUNT(*) AS total FROM help_feedback GROUP BY article_id');
+  const asked = await db.all('SELECT article_id, COUNT(*) AS n FROM tickets WHERE article_id IS NOT NULL GROUP BY article_id');
+  for (const a of data.articles) {
+    const v = votes.find((x) => x.article_id === a.id);
+    a.helpful = Number(v?.yes || 0);
+    a.not_helpful = Number(v?.total || 0) - a.helpful;
+    a.requests = Number(asked.find((x) => x.article_id === a.id)?.n || 0);
+  }
+  return data;
+});
 
 route('POST', '/api/admin/help/articles', async (ctx) => {
   const u = await A.requireSuper(ctx);
@@ -69,6 +91,7 @@ route('PATCH', '/api/admin/help/articles/:id', async (ctx) => {
 route('DELETE', '/api/admin/help/articles/:id', async (ctx) => {
   await A.requireSuper(ctx);
   await db.q('DELETE FROM help_articles WHERE id=?', [ctx.params.id]);
+  await db.q('DELETE FROM help_feedback WHERE article_id=?', [ctx.params.id]);
   await A.audit(ctx, null, 'help.article_deleted', ctx.params.id);
   return { ok: true };
 });

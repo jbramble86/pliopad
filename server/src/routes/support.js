@@ -22,7 +22,7 @@ const n = (v) => (v === null || v === undefined ? null : Number(v));
 const ticketOut = (r) => r && {
   id: Number(r.id), user_id: Number(r.user_id), workspace_id: n(r.workspace_id), subject: r.subject, category: r.category, status: r.status,
   priority: r.priority || 'normal', assignee_id: n(r.assignee_id), platform: r.platform, app_version: r.app_version, last_from: r.last_from,
-  rating: r.rating || null, rating_comment: r.rating_comment || null, created_at: Number(r.created_at), updated_at: Number(r.updated_at), closed_at: n(r.closed_at),
+  rating: r.rating || null, rating_comment: r.rating_comment || null, article_id: r.article_id || null, created_at: Number(r.created_at), updated_at: Number(r.updated_at), closed_at: n(r.closed_at),
 };
 
 // ---------- Attachments ----------
@@ -115,15 +115,17 @@ route('POST', '/api/support/tickets', async (ctx) => {
   let wsId = Number(ctx.in('workspace_id')) || null;
   if (wsId && !(await db.val('SELECT 1 FROM members WHERE workspace_id=? AND user_id=?', [wsId, u.id]))) wsId = null;
   const category = ['question', 'problem', 'billing', 'idea'].includes(ctx.in('category')) ? ctx.in('category') : 'question';
+  // Asked from a help article ("Did this help?" → No): remember which one, so support sees what the customer already read.
+  const article = ctx.in('article_id') ? await db.one('SELECT id, title FROM help_articles WHERE id=?', [String(ctx.in('article_id'))]) : null;
   const now = nowMs();
-  const id = await db.insert('tickets', { user_id: u.id, workspace_id: wsId, subject: clampStr(subject, 200), category, status: 'open',
+  const id = await db.insert('tickets', { user_id: u.id, workspace_id: wsId, subject: clampStr(subject, 200), category, status: 'open', article_id: article?.id || null,
     priority: category === 'problem' ? 'high' : 'normal', platform: clampStr(ctx.in('platform', null), 40), app_version: clampStr(ctx.in('app_version', null), 40),
     last_from: 'user', user_read_at: now, created_at: now, updated_at: now });
   await addMessage(id, u.id, { body, files: ctx.body.files });
   await A.audit(ctx, wsId, 'support.ticket_opened', id);
   const t = ticketOut(await db.one('SELECT * FROM tickets WHERE id=?', [id]));
-  await tellStaff(ctx.req, t, `${u.name} <${u.email}> opened a support request${t.platform ? ` from ${t.platform}${t.app_version ? ' ' + t.app_version : ''}` : ''}:\n\n${body}`);
-  return { ...t, messages: await thread(ctx.req, id, { staff: false }) };
+  await tellStaff(ctx.req, t, `${u.name} <${u.email}> opened a support request${t.platform ? ` from ${t.platform}${t.app_version ? ' ' + t.app_version : ''}` : ''}${article ? ` after reading “${article.title}”` : ''}:\n\n${body}`);
+  return userView(ctx, id);
 });
 
 async function ownTicket(ctx) {
@@ -132,7 +134,12 @@ async function ownTicket(ctx) {
   if (!t) throw new ApiError(404, 'That request was not found.');
   return { u, t: ticketOut(t) };
 }
-const userView = async (ctx, id) => ({ ...ticketOut(await db.one('SELECT * FROM tickets WHERE id=?', [id])), messages: await thread(ctx.req, id, { staff: false }) });
+/** The help article a request was asked from, if any. */
+const articleOf = async (t) => (t.article_id ? (await db.one('SELECT id, title FROM help_articles WHERE id=?', [t.article_id])) || null : null);
+const userView = async (ctx, id) => {
+  const t = ticketOut(await db.one('SELECT * FROM tickets WHERE id=?', [id]));
+  return { ...t, article: await articleOf(t), messages: await thread(ctx.req, id, { staff: false }) };
+};
 
 route('GET', '/api/support/tickets/:id', async (ctx) => {
   const { t } = await ownTicket(ctx);
@@ -232,6 +239,7 @@ route('GET', '/api/admin/tickets/:id', async (ctx) => {
   const history = await db.all('SELECT id, subject, status, created_at FROM tickets WHERE user_id=? AND id<>? ORDER BY created_at DESC LIMIT 10', [t.user_id, t.id]);
   return {
     ...ticketOut(t),
+    article: await articleOf(t),
     user: user && { ...user, id: Number(user.id), created_at: Number(user.created_at), last_seen: n(user.last_seen) },
     workspaces: workspaces.map((w) => ({ ...w, id: Number(w.id) })),
     history: history.map((h) => ({ ...h, id: Number(h.id), created_at: Number(h.created_at) })),

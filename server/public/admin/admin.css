@@ -137,3 +137,8 @@
 .help-article { font-size: 15px; line-height: 1.65; } .help-article p { margin: 0 0 12px; } .help-article li { margin: 4px 0; }
 @media (max-width: 1200px) { .hc-edit { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .hc { grid-template-columns: 1fr; } .hc-side { position: static; max-height: none; } }
+.hc-score { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 8px; }
+.hc-score.good { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.hc-score.mid { background: color-mix(in srgb, #F59E0B 18%, transparent); color: #B45309; }
+.hc-score.bad { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.tk-from { margin-top: 6px; font-size: 13px; padding: 6px 10px; border-radius: 8px; background: var(--accent-soft); display: inline-block; }

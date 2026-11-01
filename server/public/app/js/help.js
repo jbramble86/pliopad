@@ -1,6 +1,6 @@
 // Help center: articles (the same on every platform, served by the server), "Contact support", and the user's requests,
 // which platform admins answer from the admin console.
-import { h, icon, toast, relTime, fmtDate } from './ui.js';
+import { h, icon, toast, relTime, fmtDate, store } from './ui.js';
 import { state, api } from './api.js';
 import { go } from './main.js';
 import { attachPicker, messageFiles, articleBody } from './support-ui.js';
@@ -28,7 +28,7 @@ export async function helpPage(main, kind, id) {
     page.replaceChildren();
   }
   if (kind === 'a') return article(main, scroll, page, id);
-  if (kind === 'new') return newRequest(main, scroll, page);
+  if (kind === 'new') return newRequest(main, scroll, page, id);
   if (kind === 't') return ticket(main, scroll, page, Number(id));
   return home(main, scroll, page);
 }
@@ -72,17 +72,50 @@ function article(main, scroll, page, id) {
   const cat = articles.categories.find((c) => c.id === a.category);
   main.replaceChildren(topbar(crumb('Help center', base()), a.title), scroll);
   const related = articles.articles.filter((x) => x.category === a.category && x.id !== a.id);
+  const contact = h('div', { class: 'help-contact card' }, h('div', { class: 'grow' }, h('h3', {}, 'Didn’t answer your question?'), h('div', { class: 'muted' }, 'Tell us what you need and we’ll get back to you.')),
+    h('a', { class: 'btn primary', href: `${base()}/new/${a.id}` }, icon('chat'), 'Contact support'));
   page.append(
     h('div', { class: 'muted', style: { marginBottom: '6px' } }, `${cat?.icon || ''} ${cat?.name || ''}`),
     h('h1', { class: 'help-title' }, a.title),
     h('div', { class: 'help-article' }, ...articleBody(a.body)),
     related.length ? h('div', { class: 'help-related' }, h('h3', { class: 'help-h' }, 'Related'), related.map((r) => h('a', { class: 'help-link', href: `${base()}/a/${r.id}` }, icon('page'), r.title))) : null,
-    h('div', { class: 'help-contact card' }, h('div', { class: 'grow' }, h('h3', {}, 'Didn’t answer your question?'), h('div', { class: 'muted' }, 'Tell us what you need and we’ll get back to you.')),
-      h('a', { class: 'btn primary', href: `${base()}/new` }, icon('chat'), 'Contact support')));
+    feedback(a, contact),
+    contact);
 }
 
-function newRequest(main, scroll, page) {
+/** "Did this help?": Yes thanks them; No offers to ask support, with this article attached to the request (and hides the duplicate contact card). */
+function feedback(a, contact) {
+  const key = 'helpVote:' + a.id;
+  const box = h('div', { class: 'help-vote' });
+  const draw = () => {
+    const vote = store.get(key, null);
+    contact.hidden = vote === false;
+    if (vote === null) {
+      box.replaceChildren(h('b', { class: 'grow' }, 'Did this help?'),
+        h('button', { class: 'btn', onclick: () => send(true) }, '👍 Yes'), h('button', { class: 'btn', onclick: () => send(false) }, '👎 No'));
+    } else if (vote) {
+      box.replaceChildren(h('span', { class: 'grow' }, '🎉 Glad it helped. Thanks for letting us know!'), h('button', { class: 'btn sm', onclick: () => { store.del(key); draw(); } }, 'Change'));
+    } else {
+      box.replaceChildren(h('span', { class: 'grow' }, 'Sorry it didn’t help. Tell us what you need and we’ll get back to you.'),
+        h('a', { class: 'btn primary', href: `${base()}/new/${a.id}` }, icon('chat'), 'Ask support'), h('button', { class: 'btn sm', onclick: () => { store.del(key); draw(); } }, 'Change'));
+    }
+  };
+  const send = async (helpful) => {
+    store.set(key, helpful);
+    draw();
+    try { await api('POST', `/help/${encodeURIComponent(a.id)}/feedback`, { helpful }); } catch { /* the answer is kept here either way */ }
+  };
+  draw();
+  return box;
+}
+
+function newRequest(main, scroll, page, articleId) {
   main.replaceChildren(topbar(crumb('Help center', base()), 'Contact support'), scroll);
+  let about = articles.articles.find((x) => x.id === articleId) || null;
+  const aboutChip = h('div', { class: 'help-about' });
+  const drawAbout = () => aboutChip.replaceChildren(...(about ? [icon('page'), h('span', { class: 'grow' }, 'About the article ', h('b', {}, `“${about.title}”`), '. We’ll see you’ve already read it.'),
+    h('button', { class: 'btn icon', title: 'Not about this article', type: 'button', onclick: () => { about = null; drawAbout(); } }, icon('x'))] : []));
+  drawAbout();
   const kind = h('select', { class: 'input' }, KINDS.map(([v, l]) => h('option', { value: v }, l)));
   const subject = h('input', { class: 'input', maxLength: 200, placeholder: 'A short summary' });
   const body = h('textarea', { class: 'input', rows: 8, placeholder: 'What happened, what you expected, and any steps to reproduce it. The more detail, the faster we can help.' });
@@ -90,6 +123,7 @@ function newRequest(main, scroll, page) {
   const files = attachPicker();
   page.append(h('h1', { class: 'help-title' }, 'Contact support'),
     h('p', { class: 'muted' }, 'We reply by email and in the Help center. Your app and version are included automatically.'),
+    aboutChip,
     h('form', { class: 'help-form', onsubmit: async (e) => {
       e.preventDefault();
       if (!subject.value.trim() || !body.value.trim()) return toast('Add a subject and a description.', { error: true });
@@ -97,7 +131,7 @@ function newRequest(main, scroll, page) {
       btn.disabled = true;
       try {
         const t = await api('POST', '/support/tickets', { subject: subject.value.trim(), body: body.value.trim(), category: kind.value,
-          platform: 'Web', app_version: state.me?.app?.version || null, workspace_id: state.wsId, files: files.ids() });
+          platform: 'Web', app_version: state.me?.app?.version || null, workspace_id: state.wsId, files: files.ids(), article_id: about?.id || null });
         toast('Sent. We’ll get back to you soon.');
         go(`${base()}/t/${t.id}`);
       } catch (x) { toast(x.message, { error: true }); btn.disabled = false; }
@@ -128,7 +162,7 @@ async function ticket(main, scroll, page, id) {
   };
   page.append(
     h('div', { class: 'row', style: { alignItems: 'flex-start', gap: '12px' } }, h('div', { class: 'grow' }, h('h1', { class: 'help-title' }, t.subject),
-      h('div', { class: 'muted' }, `#${t.id} · opened ${fmtDate(t.created_at)}`)), h('span', { class: 'help-status ' + STATUS[t.status][1] }, STATUS[t.status][0])),
+      h('div', { class: 'muted' }, `#${t.id} · opened ${fmtDate(t.created_at)}`, t.article ? [' · about ', h('a', { href: `${base()}/a/${t.article.id}` }, t.article.title)] : null)), h('span', { class: 'help-status ' + STATUS[t.status][1] }, STATUS[t.status][0])),
     h('div', { class: 'help-thread' }, t.messages.map((m) => h('div', { class: 'help-msg' + (m.staff ? ' staff' : '') },
       h('div', { class: 'help-meta' }, h('b', {}, m.staff ? `${m.author || 'Support'} · PlioPad support` : 'You'), ' · ', fmtDate(m.created_at)),
       h('div', { class: 'help-body' }, m.body), messageFiles(m.files)))),

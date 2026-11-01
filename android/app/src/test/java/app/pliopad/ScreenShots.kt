@@ -210,6 +210,7 @@ class HomeDragTest : ScreenShotsBase() {
         ActivityScenario.launch<MainActivity>(i).use {
             repeat(3) { compose.waitForIdle(); Thread.sleep(250) }
             compose.onNodeWithText("Edit").performClick()
+            compose.waitUntil(5_000) { compose.onAllNodesWithText("Done").fetchSemanticsNodes().isNotEmpty() }
             compose.waitForIdle()
             // The first "Quick jot" is the card's handle; drag it up onto the top half of "Jump back in".
             compose.onAllNodesWithText("Quick jot")[0].performTouchInput {
@@ -247,6 +248,7 @@ class HomeEditScrollTest : ScreenShotsBase() {
         ActivityScenario.launch<MainActivity>(i).use {
             repeat(3) { compose.waitForIdle(); Thread.sleep(250) }
             compose.onNodeWithText("Edit").performClick()
+            compose.waitUntil(5_000) { compose.onAllNodesWithText("Done").fetchSemanticsNodes().isNotEmpty() }
             compose.waitForIdle()
             val before = compose.onNodeWithText("Done").fetchSemanticsNode().positionInRoot.y
             // Swipe up on a card body (the "Quick jot" card title), not on a handle.

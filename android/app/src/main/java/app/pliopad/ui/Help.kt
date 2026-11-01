@@ -104,7 +104,8 @@ private fun AttachRow(app: PliopadApp, att: Attachments, onError: (String) -> Un
 private sealed interface HelpPage {
     data object Front : HelpPage
     data class Article(val id: String) : HelpPage
-    data object Contact : HelpPage
+    /** Contact support, optionally from a help article (it's attached to the request). */
+    data class Contact(val articleId: String? = null) : HelpPage
     data class Request(val id: Long) : HelpPage
 }
 
@@ -126,7 +127,7 @@ fun HelpScreen(app: PliopadApp, ws: Long?, onBack: () -> Unit) {
     val title = when (val p = page) {
         HelpPage.Front -> "Help center"
         is HelpPage.Article -> help?.articles?.firstOrNull { it.id == p.id }?.title ?: "Help"
-        HelpPage.Contact -> "Contact support"
+        is HelpPage.Contact -> "Contact support"
         is HelpPage.Request -> "Request #${p.id}"
     }
     Scaffold(topBar = {
@@ -141,8 +142,8 @@ fun HelpScreen(app: PliopadApp, ws: Long?, onBack: () -> Unit) {
                     data == null -> Text("Loading…", Modifier.padding(top = 32.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     else -> when (val p = page) {
                         HelpPage.Front -> HelpFront(app, data, open = { page = it })
-                        is HelpPage.Article -> HelpArticleView(data, p.id, open = { page = it })
-                        HelpPage.Contact -> ContactForm(app, ws) { page = HelpPage.Request(it) }
+                        is HelpPage.Article -> HelpArticleView(app, data, p.id, open = { page = it })
+                        is HelpPage.Contact -> ContactForm(app, ws, data, p.articleId) { page = HelpPage.Request(it) }
                         is HelpPage.Request -> RequestView(app, p.id)
                     }
                 }
@@ -176,7 +177,7 @@ private fun HelpFront(app: PliopadApp, data: HelpData, open: (HelpPage) -> Unit)
             }
         }
     }
-    ContactCard("Still need help?", "Send us a message. We reply by email and here, on every device.") { open(HelpPage.Contact) }
+    ContactCard("Still need help?", "Send us a message. We reply by email and here, on every device.") { open(HelpPage.Contact()) }
     Text("Your requests", Modifier.padding(top = 18.dp, bottom = 6.dp), fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
     when {
         requests == null -> Text("Loading…", color = cs.onSurfaceVariant)
@@ -218,7 +219,7 @@ private fun ContactCard(title: String, sub: String, onClick: () -> Unit) {
 
 /** Article bodies: paragraphs separated by blank lines; "- " and "1. " lines become lists. */
 @Composable
-private fun HelpArticleView(data: HelpData, id: String, open: (HelpPage) -> Unit) {
+private fun HelpArticleView(app: PliopadApp, data: HelpData, id: String, open: (HelpPage) -> Unit) {
     val a = data.articles.firstOrNull { it.id == id } ?: return
     val cat = data.categories.firstOrNull { it.id == a.category }
     Text("${cat?.icon ?: ""} ${cat?.name ?: ""}", Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
@@ -238,12 +239,44 @@ private fun HelpArticleView(data: HelpData, id: String, open: (HelpPage) -> Unit
         Text("Related", Modifier.padding(top = 8.dp, bottom = 4.dp), fontWeight = FontWeight.SemiBold)
         related.forEach { ArticleRow(it.title) { open(HelpPage.Article(it.id)) } }
     }
-    ContactCard("Didn't answer your question?", "Tell us what you need and we'll get back to you.") { open(HelpPage.Contact) }
+    // "Did this help?" Yes thanks them; No offers to ask support with this article attached.
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    val prefs = remember { ctx.getSharedPreferences("help", android.content.Context.MODE_PRIVATE) }
+    var vote by remember(a.id) { mutableStateOf(if (prefs.contains(a.id)) prefs.getBoolean(a.id, true) else null) }
+    val answer = { helpful: Boolean ->
+        vote = helpful
+        prefs.edit().putBoolean(a.id, helpful).apply()
+        scope.launch { runCatching { app.api.helpFeedback(a.id, helpful) } }
+    }
+    val cs = MaterialTheme.colorScheme
+    Surface(shape = RoundedCornerShape(12.dp), border = androidx.compose.foundation.BorderStroke(1.dp, cs.outlineVariant), color = cs.surface,
+        modifier = Modifier.fillMaxWidth().padding(top = 18.dp)) {
+        Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            when (vote) {
+                null -> {
+                    Text("Did this help?", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                    androidx.compose.material3.TextButton(onClick = { answer(true) }) { Text("👍 Yes") }
+                    androidx.compose.material3.TextButton(onClick = { answer(false) }) { Text("👎 No") }
+                }
+                true -> {
+                    Text("🎉 Glad it helped. Thanks!", Modifier.weight(1f))
+                    androidx.compose.material3.TextButton(onClick = { vote = null; prefs.edit().remove(a.id).apply() }) { Text("Change") }
+                }
+                false -> {
+                    Text("Sorry it didn't help.", Modifier.weight(1f))
+                    Button(onClick = { open(HelpPage.Contact(a.id)) }) { Text("Ask support") }
+                }
+            }
+        }
+    }
+    if (vote != false) ContactCard("Didn't answer your question?", "Tell us what you need and we'll get back to you.") { open(HelpPage.Contact(a.id)) }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ContactForm(app: PliopadApp, ws: Long?, sent: (Long) -> Unit) {
+private fun ContactForm(app: PliopadApp, ws: Long?, data: HelpData, articleId: String?, sent: (Long) -> Unit) {
+    var about by remember { mutableStateOf(data.articles.firstOrNull { it.id == articleId }) }
     val scope = rememberCoroutineScope()
     var kind by remember { mutableStateOf("question") }
     var subject by remember { mutableStateOf("") }
@@ -253,6 +286,15 @@ private fun ContactForm(app: PliopadApp, ws: Long?, sent: (Long) -> Unit) {
     val att = remember { Attachments() }
     Text("We reply by email and in the Help center. Your app and version are included automatically.", Modifier.padding(vertical = 8.dp),
         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+    about?.let { art ->
+        Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .6f), modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+            Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Filled.Article, null, Modifier.size(18.dp))
+                Text("About “${art.title}”. We'll see you've already read it.", Modifier.weight(1f).padding(start = 8.dp, top = 8.dp, bottom = 8.dp), fontSize = 13.sp)
+                IconButton(onClick = { about = null }) { Icon(Icons.Default.Close, "Not about this article", Modifier.size(18.dp)) }
+            }
+        }
+    }
     Text("What's it about?", Modifier.padding(top = 8.dp), fontWeight = FontWeight.Medium)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { KINDS.forEach { (k, l) -> FilterChip(kind == k, { kind = k }, { Text(l) }) } }
     OutlinedTextField(subject, { subject = it.take(200) }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Subject") }, singleLine = true)
@@ -263,7 +305,7 @@ private fun ContactForm(app: PliopadApp, ws: Long?, sent: (Long) -> Unit) {
     Button(enabled = !busy && att.uploading == 0 && subject.isNotBlank() && body.isNotBlank(), modifier = Modifier.padding(top = 12.dp), onClick = {
         busy = true; error = null
         scope.launch {
-            runCatching { app.api.openTicket(subject.trim(), body.trim(), kind, ws, BuildConfig.VERSION_NAME, att.ids()) }
+            runCatching { app.api.openTicket(subject.trim(), body.trim(), kind, ws, BuildConfig.VERSION_NAME, att.ids(), about?.id) }
                 .onSuccess { sent(it.id) }.onFailure { error = it.message ?: "Couldn't send. Check your connection."; busy = false }
         }
     }) { Text(if (busy) "Sending…" else "Send to support") }
@@ -282,7 +324,7 @@ private fun RequestView(app: PliopadApp, id: Long) {
     val ticket = t ?: return Text(error ?: "Loading…", Modifier.padding(top = 24.dp), color = cs.onSurfaceVariant)
     val fmt = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
     Text(ticket.subject, Modifier.padding(top = 8.dp), fontSize = 22.sp, fontWeight = FontWeight.Bold)
-    Text("#${ticket.id} · ${STATUS[ticket.status] ?: ticket.status}", fontSize = 13.sp, color = cs.onSurfaceVariant)
+    Text("#${ticket.id} · ${STATUS[ticket.status] ?: ticket.status}" + (ticket.article?.let { " · about “${it.title}”" } ?: ""), fontSize = 13.sp, color = cs.onSurfaceVariant)
     Spacer(Modifier.heightIn(min = 12.dp))
     ticket.messages.forEach { m ->
         Surface(shape = RoundedCornerShape(12.dp), color = if (m.staff) cs.primaryContainer.copy(alpha = .7f) else cs.surfaceVariant.copy(alpha = .6f),

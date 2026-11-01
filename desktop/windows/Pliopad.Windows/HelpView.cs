@@ -50,10 +50,10 @@ public sealed class HelpView : ScrollPage
         return b;
     }
 
-    private Border ContactCard(string title, string sub)
+    private Border ContactCard(string title, string sub, string? articleId = null)
     {
         var go = new Button { Content = H(8, I("", 14, "PText"), T("Contact support", 14)), Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
-        go.Click += (_, _) => ShowContact();
+        go.Click += (_, _) => ShowContact(articleId);
         var g = new Grid { ColumnSpacing = 14 };
         g.ColumnDefinitions.Add(new ColumnDefinition());
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -145,8 +145,55 @@ public sealed class HelpView : ScrollPage
             }
         var related = _help.Articles.Where(x => x.Category == a.Category && x.Id != a.Id).ToList();
         if (related.Count > 0) { page.Children.Add(T("Related", 15, semibold: true)); foreach (var r in related) page.Children.Add(ArticleRow(r)); }
-        page.Children.Add(ContactCard("Didn't answer your question?", "Tell us what you need and we'll get back to you."));
+        var contact = ContactCard("Didn't answer your question?", "Tell us what you need and we'll get back to you.", a.Id);
+        page.Children.Add(Feedback(a, contact));
+        page.Children.Add(contact);
         Body = page;
+    }
+
+    /// <summary>"Did this help?" Yes thanks them; No offers to ask support with this article attached (and hides the duplicate contact card).</summary>
+    private Border Feedback(HelpArticle a, Border contact)
+    {
+        var box = new Border { BorderBrush = B("PBorder"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12), Padding = new Thickness(14, 8, 10, 8), Margin = new Thickness(0, 12, 0, 0) };
+        var key = "help.vote." + a.Id;
+        void Draw()
+        {
+            var vote = R.Pref(key);
+            contact.Visibility = vote == "no" ? Visibility.Collapsed : Visibility.Visible;
+            var g = new Grid { ColumnSpacing = 8 };
+            g.ColumnDefinitions.Add(new ColumnDefinition());
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            UIElement text, actions;
+            if (vote == null)
+            {
+                text = T("Did this help?", 14, semibold: true);
+                actions = H(6, Flat(T("👍 Yes", 13), () => Answer(true), pad: 8), Flat(T("👎 No", 13), () => Answer(false), pad: 8));
+            }
+            else if (vote == "yes")
+            {
+                text = T("🎉 Glad it helped. Thanks for letting us know!", 14);
+                actions = Flat(T("Change", 12, "PMuted"), () => { R.SetPref(key, null); Draw(); }, pad: 6);
+            }
+            else
+            {
+                text = Wrap(T("Sorry it didn't help. Tell us what you need and we'll get back to you.", 14));
+                var ask = new Button { Content = "Ask support", Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+                ask.Click += (_, _) => ShowContact(a.Id);
+                actions = H(6, ask, Flat(T("Change", 12, "PMuted"), () => { R.SetPref(key, null); Draw(); }, pad: 6));
+            }
+            ((FrameworkElement)text).VerticalAlignment = VerticalAlignment.Center;
+            g.Children.Add(text);
+            Grid.SetColumn((FrameworkElement)actions, 1); g.Children.Add(actions);
+            box.Child = g;
+        }
+        void Answer(bool helpful)
+        {
+            R.SetPref(key, helpful ? "yes" : "no");
+            Draw();
+            _ = R.Api.HelpFeedback(a.Id, helpful).ContinueWith(_ => { }); // the answer is kept here either way
+        }
+        Draw();
+        return box;
     }
 
     // ---- Attachments (screenshots and files) ----
@@ -193,8 +240,20 @@ public sealed class HelpView : ScrollPage
 
     // ---- Contact support ----
 
-    private void ShowContact()
+    private void ShowContact(string? articleId = null)
     {
+        var about = _help?.Articles.FirstOrDefault(x => x.Id == articleId);
+        var aboutBar = new Border { Background = B("PSelected"), CornerRadius = new CornerRadius(10), Padding = new Thickness(12, 6, 6, 6), Visibility = about == null ? Visibility.Collapsed : Visibility.Visible };
+        if (about != null)
+        {
+            var g = new Grid { ColumnSpacing = 8 };
+            g.ColumnDefinitions.Add(new ColumnDefinition());
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            g.Children.Add(Wrap(T($"📄 About the article “{about.Title}”. We'll see you've already read it.", 13)));
+            var remove = IconButton("\uE711", () => { about = null; aboutBar.Visibility = Visibility.Collapsed; }, "Not about this article", 11);
+            Grid.SetColumn(remove, 1); g.Children.Add(remove);
+            aboutBar.Child = g;
+        }
         var kind = new ComboBox { MinWidth = 260 };
         foreach (var (_, label) in Kinds) kind.Items.Add(label);
         kind.SelectedIndex = 0;
@@ -210,13 +269,14 @@ public sealed class HelpView : ScrollPage
             send.IsEnabled = false;
             try
             {
-                var t = await R.Api.OpenTicket(subject.Text.Trim(), body.Text.Trim(), Kinds[Math.Max(0, kind.SelectedIndex)].Key, R.WsId == 0 ? null : R.WsId, AppVersion, att.Files.Select(f => f.Id));
+                var t = await R.Api.OpenTicket(subject.Text.Trim(), body.Text.Trim(), Kinds[Math.Max(0, kind.SelectedIndex)].Key, R.WsId == 0 ? null : R.WsId, AppVersion, att.Files.Select(f => f.Id), about?.Id);
                 await ShowRequest(t.Id);
             }
             catch (Exception e) { error.Text = e.Message; send.IsEnabled = true; }
         };
         Body = Page(Back(), T("Contact support", 28, bold: true),
             Wrap(T("We reply by email and in the Help center. Your app and version are included automatically.", 14, "PMuted")),
+            aboutBar,
             T("What's it about?", 13, "PMuted"), kind, T("Subject", 13, "PMuted"), subject, T("Details", 13, "PMuted"), body,
             H(8, AttachButton(att)), att.Chips, error, send);
     }
@@ -228,7 +288,7 @@ public sealed class HelpView : ScrollPage
         Body = Page(Back(), T("Loading…", 14, "PMuted"));
         Ticket t;
         try { t = await R.Api.Ticket(id); } catch (Exception e) { Body = Page(Back(), T(e.Message, 14, "PMuted")); return; }
-        var page = Page(Back(), Wrap(T(t.Subject, 26, bold: true)), T($"#{t.Id} · {t.StatusName}", 13, "PMuted"));
+        var page = Page(Back(), Wrap(T(t.Subject, 26, bold: true)), T($"#{t.Id} · {t.StatusName}" + (t.Article != null ? $" · about “{t.Article.Title}”" : ""), 13, "PMuted"));
         foreach (var m in t.Messages ?? [])
         {
             var who = m.Staff ? $"{m.Author ?? "Support"} · PlioPad support" : "You";

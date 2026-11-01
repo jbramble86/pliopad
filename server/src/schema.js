@@ -4,7 +4,7 @@ import { setSetting, jdec } from './util.js';
 import { fileOrphanPages } from './notes.js';
 import { CATEGORIES, ARTICLES } from './help.js';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const TABLES = {
   settings: 'k VARCHAR(100) PRIMARY KEY, v {TEXT}',
@@ -51,12 +51,13 @@ const TABLES = {
   tickets: `{ID}, user_id BIGINT NOT NULL, workspace_id BIGINT NULL, subject VARCHAR(200) NOT NULL, category VARCHAR(40) NULL,
     status VARCHAR(20) NOT NULL, priority VARCHAR(10) NOT NULL DEFAULT 'normal', assignee_id BIGINT NULL, platform VARCHAR(40) NULL, app_version VARCHAR(40) NULL,
     last_from VARCHAR(10) NOT NULL, user_read_at BIGINT NULL, staff_read_at BIGINT NULL, rating VARCHAR(10) NULL, rating_comment VARCHAR(1000) NULL,
-    created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL, closed_at BIGINT NULL`,
+    created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL, closed_at BIGINT NULL, article_id VARCHAR(80) NULL`,
   ticket_messages: `{ID}, ticket_id BIGINT NOT NULL, user_id BIGINT NULL, staff INT NOT NULL DEFAULT 0, kind VARCHAR(10) NOT NULL DEFAULT 'message',
     body {TEXT} NOT NULL, created_at BIGINT NOT NULL`,
   help_categories: `id VARCHAR(60) PRIMARY KEY, name VARCHAR(120) NOT NULL, icon VARCHAR(16) NULL, sort INT NOT NULL DEFAULT 0`,
   help_articles: `id VARCHAR(80) PRIMARY KEY, category_id VARCHAR(60) NOT NULL, title VARCHAR(200) NOT NULL, body {TEXT} NOT NULL,
     sort INT NOT NULL DEFAULT 0, published INT NOT NULL DEFAULT 1, updated_at BIGINT NOT NULL, updated_by BIGINT NULL`,
+  help_feedback: `article_id VARCHAR(80) NOT NULL, user_id BIGINT NOT NULL, helpful INT NOT NULL, created_at BIGINT NOT NULL, PRIMARY KEY (article_id, user_id)`,
   ticket_files: `id VARCHAR(36) PRIMARY KEY, ticket_id BIGINT NULL, message_id BIGINT NULL, user_id BIGINT NOT NULL, name VARCHAR(255) NOT NULL,
     mime VARCHAR(120) NOT NULL, size BIGINT NOT NULL, path VARCHAR(255) NOT NULL, created_at BIGINT NOT NULL`,
 };
@@ -100,6 +101,8 @@ export async function migrate() {
   // Read straight from the table: settings are loaded into memory only after migrating.
   const before = Number(jdec(await db.val('SELECT v FROM settings WHERE k=?', ['schema_version']), 0)) || 0;
   if (before < 2) await fileOrphanPages();
+  // Version 3: support requests remember the help article they came from (new installs already have the column).
+  if (before < 3) { try { await db.q('ALTER TABLE tickets ADD COLUMN article_id VARCHAR(80) NULL'); } catch { /* already there */ } }
   // The Help center starts with PlioPad's built-in articles; after that they're edited in the admin console.
   if (!Number(await db.val('SELECT COUNT(*) FROM help_categories'))) await seedHelp();
   await setSetting(db, 'schema_version', SCHEMA_VERSION);

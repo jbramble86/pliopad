@@ -370,3 +370,18 @@ test('help articles are managed in the admin console', async () => {
   await api('DELETE', `/api/admin/help/articles/${second.id}`, null, owner);
   assert.equal((await api('DELETE', `/api/admin/help/categories/${cat.id}`, null, owner)).status, 200);
 });
+
+test('"Did this help?" feedback and requests asked from an article', async () => {
+  const art = (await api('GET', '/api/help')).data.articles[0];
+  await api('POST', `/api/help/${art.id}/feedback`, { helpful: true }, member);
+  await api('POST', `/api/help/${art.id}/feedback`, { helpful: false }, member); // changing your answer
+  await api('POST', `/api/help/${art.id}/feedback`, { helpful: true }, owner);
+  let r = await api('POST', '/api/support/tickets', { subject: 'Still stuck', body: 'The article did not cover my case.', article_id: art.id }, member);
+  assert.equal(r.data.article_id, art.id);
+  assert.equal(r.data.article?.title, art.title, 'the request shows which article it came from');
+  const admin = await api('GET', `/api/admin/tickets/${r.data.id}`, null, owner);
+  assert.equal(admin.data.article.id, art.id);
+  const stats = (await api('GET', '/api/admin/help', null, owner)).data.articles.find((a) => a.id === art.id);
+  assert.deepEqual([stats.helpful, stats.not_helpful, stats.requests], [1, 1, 1]);
+  assert.equal((await api('POST', '/api/help/nope/feedback', { helpful: true }, member)).status, 404);
+});

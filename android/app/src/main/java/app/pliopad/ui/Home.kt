@@ -386,11 +386,18 @@ fun HomeScreen(
                     if (s.ai) "✨  Ask AI" to { nav.navigate("ask") } else null,
                 ), layout = homeLayout, editing = customizing,
                     // Edit starts from the account's latest layout (another device may have changed it).
+                    // Edit opens at once; the account's latest layout (another device may have changed it) is picked up in the background,
+                    // unless a card has already been moved here.
                     onEdit = {
                         if (customizing) customizing = false
-                        else scope.launch {
-                            runCatching { app.api.me() }.onSuccess { homeLayout = HomePrefs.fromAccount(ctx, app.api, it.user.prefs, homeSlot) }
+                        else {
                             customizing = true
+                            val before = homeLayout
+                            scope.launch {
+                                runCatching { app.api.me() }.onSuccess { me ->
+                                    if (homeLayout == before) homeLayout = HomePrefs.fromAccount(ctx, app.api, me.user.prefs, homeSlot)
+                                }
+                            }
                         }
                     },
                     onLayout = { l -> homeLayout = l; scope.launch { HomePrefs.save(ctx, app.api, l, homeSlot) } }, large = largeHome)
